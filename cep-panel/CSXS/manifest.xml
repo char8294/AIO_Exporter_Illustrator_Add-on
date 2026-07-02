@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0"
-    ExtensionBundleId="com.local.tripleformatexporter"
+    ExtensionBundleId="com.local.aioexporter"
     ExtensionBundleVersion="1.0.0"
-    ExtensionBundleName="Triple Format Exporter"
+    ExtensionBundleName="AIO Exporter"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ExtensionList>
-        <Extension Id="com.local.tripleformatexporter.panel" Version="1.0.0" />
+        <Extension Id="com.local.aioexporter.panel" Version="1.0.0" />
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
@@ -19,7 +19,7 @@
         </RequiredRuntimeList>
     </ExecutionEnvironment>
     <DispatchInfoList>
-        <Extension Id="com.local.tripleformatexporter.panel">
+        <Extension Id="com.local.aioexporter.panel">
             <DispatchInfo>
                 <Resources>
                     <MainPath>./index.html</MainPath>
@@ -29,19 +29,19 @@
                 </Lifecycle>
                 <UI>
                     <Type>Panel</Type>
-                    <Menu>Triple Export</Menu>
+                    <Menu>AIO Exporter</Menu>
                     <Geometry>
                         <Size>
-                            <Height>260</Height>
-                            <Width>360</Width>
+                            <Height>540</Height>
+                            <Width>380</Width>
                         </Size>
                         <MinSize>
-                            <Height>220</Height>
-                            <Width>320</Width>
+                            <Height>480</Height>
+                            <Width>340</Width>
                         </MinSize>
                         <MaxSize>
-                            <Height>420</Height>
-                            <Width>520</Width>
+                            <Height>760</Height>
+                            <Width>680</Width>
                         </MaxSize>
                     </Geometry>
                 </UI>

@@ -1,65 +1,61 @@
-# Triple Format Exporter for Adobe Illustrator 2026
+# AIO Exporter for Adobe Illustrator 2026
 
-Add-on/script นี้ใช้ export ไฟล์ Illustrator ที่เปิดอยู่ให้กลายเป็น 3 ไฟล์ในครั้งเดียว:
+AIO Exporter is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
 
 - `.ai`
 - `.pdf`
 - `.png`
 
-สคริปต์จะ save PDF ก่อน, export PNG ต่อ, แล้ว save AI เป็นขั้นสุดท้าย เพื่อให้เอกสารที่เปิดอยู่กลับมาอยู่บนไฟล์ `.ai` หลัง export เสร็จ
+The panel lets you choose which formats to export, adjust settings for each format, and run everything from one **Export Selected** button.
 
-## วิธีเร็วที่สุด: รันสคริปต์โดยตรง
+## Install as a CEP Panel
 
-1. เปิด Illustrator 2026
-2. เปิดไฟล์ที่ต้องการ export
-3. ไปที่ `File > Scripts > Other Script...`
-4. เลือกไฟล์ `scripts/TripleFormatExporter.jsx` จากโฟลเดอร์นี้
-5. เลือกโฟลเดอร์ปลายทาง, ชื่อไฟล์หลัก, และตัวเลือก PNG
-6. กด `Export`
-
-ถ้าต้องการให้เมนูนี้ขึ้นถาวรใน `File > Scripts` ให้ copy ไฟล์นี้:
-
-```text
-scripts/TripleFormatExporter.jsx
-```
-
-ไปไว้ในโฟลเดอร์ Scripts ของ Illustrator เช่น:
-
-```text
-C:\Program Files\Adobe\Adobe Illustrator 2026\Presets\en_US\Scripts
-```
-
-จากนั้น restart Illustrator
-
-## ติดตั้งเป็น CEP panel
-
-รันไฟล์ PowerShell นี้จากโฟลเดอร์โปรเจกต์:
+Run this PowerShell script from the project folder:
 
 ```powershell
 .\Install-CEP-Panel.ps1
 ```
 
-ถ้า Windows บล็อก execution policy ให้ใช้คำสั่งนี้แทน:
+If Windows blocks script execution, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-CEP-Panel.ps1
 ```
 
-จากนั้น restart Illustrator แล้วเปิด:
+Restart Illustrator, then open:
 
 ```text
-Window > Extensions > Triple Export
+Window > Extensions > AIO Exporter
 ```
 
-ตัว installer จะ copy `cep-panel` ไปไว้ที่ user CEP extensions folder และเปิด unsigned CEP panels สำหรับใช้งาน local development
+The installer copies `cep-panel` into the user CEP extensions folder, enables unsigned CEP panels for local development, and removes the old `com.local.tripleformatexporter` install folder if it exists.
 
-## พฤติกรรมการ export
+## Run the Fallback Script Directly
 
-- ถ้าปิด `Overwrite existing files` แล้วมีไฟล์ชื่อซ้ำอยู่ ระบบจะเติม `_01`, `_02` ต่อท้ายให้อัตโนมัติ
-- PNG ใช้ active artboard เป็นค่าเริ่มต้น
-- PNG scale เป็นเปอร์เซ็นต์ โดย `100%` คือ export scale ปกติของ Illustrator
-- PDF เปิด Illustrator editability ไว้ เพื่อให้เปิดกลับมาแก้ไขได้ง่าย
+1. Open Illustrator 2026.
+2. Open the document you want to export.
+3. Go to `File > Scripts > Other Script...`.
+4. Choose `scripts/TripleFormatExporter.jsx` from this project.
+5. Choose the export folder, base name, formats, and settings.
+6. Press `Export`.
 
-## Notes
+To make the script appear permanently in Illustrator's script menu, copy this file:
 
-CEP panel เรียก logic export เดียวกับสคริปต์ `.jsx` ถ้า Illustrator รุ่นใหม่ในอนาคตไม่รองรับ CEP แล้ว วิธีรัน `.jsx` โดยตรงจะยังเป็น fallback ที่ปลอดภัยที่สุด
+```text
+scripts/TripleFormatExporter.jsx
+```
+
+to an Illustrator scripts folder such as:
+
+```text
+C:\Program Files\Adobe\Adobe Illustrator 2026\Presets\en_US\Scripts
+```
+
+Then restart Illustrator.
+
+## Export Behavior
+
+- If `Overwrite existing files` is off and a selected output already exists, AIO Exporter appends `_01`, `_02`, and so on.
+- Duplicate-name checks only consider the selected formats.
+- PDF and PNG export before AI so the open document returns to the `.ai` save target when AI is selected.
+- PNG scale is a percentage; `100%` is Illustrator's normal export size.

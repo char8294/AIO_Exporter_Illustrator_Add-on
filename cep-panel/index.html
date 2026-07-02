@@ -2,25 +2,98 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Triple Format Exporter</title>
+    <title>AIO Exporter</title>
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
     <main class="panel">
         <header class="header">
             <div>
-                <h1>Triple Export</h1>
-                <p>AI + PDF + PNG</p>
+                <h1>AIO Exporter</h1>
+                <p>Export selected formats</p>
             </div>
             <span class="badge">2026</span>
         </header>
 
+        <section class="section">
+            <label class="field-label" for="folderInput">Folder</label>
+            <div class="field-row">
+                <input id="folderInput" class="text-field" type="text" spellcheck="false">
+                <button id="browseButton" class="secondary-button" type="button">Browse</button>
+            </div>
+
+            <label class="field-label" for="baseNameInput">Base name</label>
+            <input id="baseNameInput" class="text-field" type="text" spellcheck="false">
+
+            <label class="check-line">
+                <input id="overwriteCheckbox" type="checkbox">
+                <span>Overwrite existing files</span>
+            </label>
+        </section>
+
+        <section class="section">
+            <div class="section-title">Export formats</div>
+
+            <div class="format-list">
+                <div class="format-row" data-format-row="ai">
+                    <label class="format-check">
+                        <input id="formatAi" type="checkbox" checked>
+                        <span class="format-extension">AI</span>
+                        <span class="format-copy">
+                            <span class="format-name">Editable source</span>
+                            <span id="summaryAi" class="format-summary"></span>
+                        </span>
+                    </label>
+                    <button class="icon-button settings-button" type="button" data-format="ai" aria-label="AI settings">&#9881;</button>
+                </div>
+
+                <div class="format-row" data-format-row="pdf">
+                    <label class="format-check">
+                        <input id="formatPdf" type="checkbox" checked>
+                        <span class="format-extension">PDF</span>
+                        <span class="format-copy">
+                            <span class="format-name">Print/share file</span>
+                            <span id="summaryPdf" class="format-summary"></span>
+                        </span>
+                    </label>
+                    <button class="icon-button settings-button" type="button" data-format="pdf" aria-label="PDF settings">&#9881;</button>
+                </div>
+
+                <div class="format-row" data-format-row="png">
+                    <label class="format-check">
+                        <input id="formatPng" type="checkbox" checked>
+                        <span class="format-extension">PNG</span>
+                        <span class="format-copy">
+                            <span class="format-name">Raster preview</span>
+                            <span id="summaryPng" class="format-summary"></span>
+                        </span>
+                    </label>
+                    <button class="icon-button settings-button" type="button" data-format="png" aria-label="PNG settings">&#9881;</button>
+                </div>
+            </div>
+        </section>
+
         <button id="exportButton" class="primary-button" type="button">
-            Export Active Document
+            Export Selected
         </button>
 
         <p id="statusText" class="status" role="status">Ready</p>
     </main>
+
+    <div id="settingsModal" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-backdrop" data-close-modal></div>
+        <section class="modal-card">
+            <header class="modal-header">
+                <h2 id="modalTitle">Settings</h2>
+                <button class="icon-button" type="button" data-close-modal aria-label="Close settings">x</button>
+            </header>
+            <div id="modalBody" class="modal-body"></div>
+            <footer class="modal-actions">
+                <button id="modalCancelButton" class="secondary-button" type="button">Cancel</button>
+                <button id="modalDoneButton" class="primary-button compact" type="button">Done</button>
+            </footer>
+        </section>
+    </div>
 
     <script src="js/CSInterface.js"></script>
     <script src="js/main.js"></script>
