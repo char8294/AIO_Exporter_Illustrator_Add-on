@@ -6,7 +6,7 @@
 */
 (function () {
     var APP_NAME = "AIO Exporter";
-    var APP_VERSION = "1.1.0";
+    var APP_VERSION = "1.3.2";
     var DEFAULT_BASE_NAME = "AIO_Exporter";
 
     function trim(value) {
@@ -97,6 +97,24 @@
         } catch (ignored) {}
 
         return 1;
+    }
+
+    function artboardNames(doc) {
+        var count = artboardCount(doc);
+        var names = [];
+        var i;
+        var name;
+
+        for (i = 0; i < count; i += 1) {
+            try {
+                name = trim(doc.artboards[i].name || "");
+            } catch (ignored) {
+                name = "";
+            }
+            names.push(name || ("Artboard " + (i + 1)));
+        }
+
+        return names;
     }
 
     function activeArtboardNumber(doc) {
@@ -913,12 +931,14 @@
         var baseName = hasDocument ? defaultBaseName(app.activeDocument) : DEFAULT_BASE_NAME;
         var totalArtboards = hasDocument ? artboardCount(app.activeDocument) : 1;
         var activeArtboard = hasDocument ? activeArtboardNumber(app.activeDocument) : 1;
+        var names = hasDocument ? artboardNames(app.activeDocument) : ["Artboard 1"];
         var pdfPresets = pdfPresetNames();
 
         return "{" +
             '"hasDocument":' + (hasDocument ? "true" : "false") + "," +
             '"artboardCount":' + totalArtboards + "," +
             '"activeArtboard":' + activeArtboard + "," +
+            '"artboardNames":' + quoteJsonArray(names) + "," +
             '"version":' + quoteJson(APP_VERSION) + "," +
             '"pdfPresets":' + quoteJsonArray(pdfPresets) + "," +
             '"folder":' + quoteJson(folder.fsName) + "," +

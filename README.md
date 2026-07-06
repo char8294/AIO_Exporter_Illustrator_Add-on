@@ -1,6 +1,6 @@
 # AIO Exporter for Adobe Illustrator 2026
 
-AIO Exporter v1.1.0 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
+AIO Exporter v1.3.2 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
 
 - `.ai`
 - `.pdf`
@@ -16,6 +16,12 @@ Run this PowerShell script from the project folder:
 
 ```powershell
 .\Install-CEP-Panel.ps1
+```
+
+Or double-click:
+
+```text
+Install-CEP-Panel.bat
 ```
 
 If Windows blocks script execution, run:
@@ -62,9 +68,11 @@ Then restart Illustrator.
 - PDF and PNG export before AI so the open document returns to the `.ai` save target when AI is selected.
 - AI save writes the full Illustrator document and does not use the shared artboard selection.
 - PNG scale is a percentage; `100%` is Illustrator's normal export size.
-- Artboard settings support all artboards or a custom range like `1,3-5` for PDF and clipped PNG exports.
+- Artboard settings show Illustrator artboard names in a right-flowing checkbox grid, plus All and Range controls for PDF and clipped PNG exports.
 - PDF settings use PDF presets reported by Illustrator and can export selected artboards as one multi-page PDF or separate one-page PDF files.
 - PNG settings export the selected artboards as separate `_01`, `_02`, ... files when artboard clipping is used, and still support include bleed or full-document export.
+- Artboard selection uses lightweight checkboxes so the panel opens without generating preview files.
 - AI settings expose the Illustrator save version, PDF compatibility, linked file embedding, ICC profile embedding, compression, font subsetting, and legacy transparency flattening.
 - CEP panel settings are saved in the panel's local storage. The direct JSX fallback script starts from defaults each time.
-- The panel header shows the installed version and includes an **Update** button that checks GitHub releases for newer builds.
+- The panel header shows the installed version and includes an icon update button that checks GitHub releases for newer builds.
+- PDF preset choices refresh from Illustrator each time PDF settings are opened.

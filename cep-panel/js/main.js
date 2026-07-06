@@ -6,9 +6,10 @@
     var updateBusy = false;
     var activeModalFormat = null;
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.1.0";
+    var APP_VERSION = "1.3.2";
     var GITHUB_RELEASES_URL = "https://github.com/char8294/Illustrator_Add-on/releases";
     var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/releases/latest";
+    var GITHUB_TAGS_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/tags";
 
     var AI_COMPATIBILITY_OPTIONS = [
         ["ILLUSTRATOR19", "Illustrator 19"],
@@ -60,6 +61,7 @@
     var documentInfo = {
         artboardCount: 1,
         activeArtboard: 1,
+        artboardNames: [],
         pdfPresets: []
     };
 
@@ -279,7 +281,7 @@
         }
     }
 
-    function fetchLatestRelease(callback) {
+    function fetchJson(url, callback) {
         var request;
         var completed = false;
 
@@ -299,7 +301,7 @@
 
         request = new XMLHttpRequest();
 
-        request.open("GET", GITHUB_LATEST_RELEASE_API, true);
+        request.open("GET", url, true);
         request.timeout = 8000;
         request.onreadystatechange = function () {
             var release;
@@ -335,6 +337,52 @@
         }
     }
 
+    function fetchLatestRelease(callback) {
+        fetchJson(GITHUB_LATEST_RELEASE_API, callback);
+    }
+
+    function fetchLatestTag(callback) {
+        fetchJson(GITHUB_TAGS_API, function (error, tags) {
+            if (error) {
+                callback(error);
+                return;
+            }
+
+            if (!tags || !tags.length) {
+                callback(new Error("No GitHub tags found."));
+                return;
+            }
+
+            callback(null, tags[0]);
+        });
+    }
+
+    function releaseVersion(release) {
+        return normalizeVersion(release && (release.tag_name || release.name));
+    }
+
+    function showUpdateCheckFallback(message) {
+        setStatus(message || "Opening GitHub releases page...", false);
+        openExternalUrl(GITHUB_RELEASES_URL);
+    }
+
+    function finishUpdateCheck(latestVersion, releaseUrl) {
+        releaseUrl = releaseUrl || GITHUB_RELEASES_URL;
+
+        if (!latestVersion) {
+            showUpdateCheckFallback("No published update version found. Opening GitHub releases...");
+            return;
+        }
+
+        if (compareVersions(latestVersion, APP_VERSION) > 0) {
+            setStatus("Update available: v" + latestVersion, false);
+            openExternalUrl(releaseUrl);
+            return;
+        }
+
+        setStatus("AIO Exporter v" + APP_VERSION + " is up to date.", false);
+    }
+
     function checkForUpdates() {
         if (updateBusy) {
             return;
@@ -347,30 +395,24 @@
             var latestVersion;
             var releaseUrl;
 
-            setUpdateBusy(false);
-
-            if (error) {
-                setStatus("Could not check GitHub. Opening releases page...", true);
-                openExternalUrl(GITHUB_RELEASES_URL);
+            if (!error) {
+                latestVersion = releaseVersion(release);
+                releaseUrl = release.html_url || GITHUB_RELEASES_URL;
+                setUpdateBusy(false);
+                finishUpdateCheck(latestVersion, releaseUrl);
                 return;
             }
 
-            latestVersion = normalizeVersion(release.tag_name || release.name);
-            releaseUrl = release.html_url || GITHUB_RELEASES_URL;
+            fetchLatestTag(function (tagError, tag) {
+                setUpdateBusy(false);
 
-            if (!latestVersion) {
-                setStatus("Could not read latest version. Opening releases page...", true);
-                openExternalUrl(releaseUrl);
-                return;
-            }
+                if (tagError) {
+                    showUpdateCheckFallback("GitHub release check is unavailable. Opening releases...");
+                    return;
+                }
 
-            if (compareVersions(latestVersion, APP_VERSION) > 0) {
-                setStatus("Update available: v" + latestVersion, false);
-                openExternalUrl(releaseUrl);
-                return;
-            }
-
-            setStatus("AIO Exporter v" + APP_VERSION + " is up to date.", false);
+                finishUpdateCheck(releaseVersion(tag), GITHUB_RELEASES_URL);
+            });
         });
     }
 
@@ -452,34 +494,42 @@
     }
 
     function selectedArtboardMode() {
-        var selected = document.querySelector('input[name="artboardMode"]:checked');
-        return selected ? selected.value : "all";
+        return elements.artboardModeRange && elements.artboardModeRange.checked ? "range" : "all";
     }
 
     function setArtboardMode(mode) {
-        elements.artboardModeAll.checked = mode === "all";
-        elements.artboardModeRange.checked = mode === "range";
+        if (elements.artboardModeAll) {
+            elements.artboardModeAll.checked = mode === "all";
+        }
+        if (elements.artboardModeRange) {
+            elements.artboardModeRange.checked = mode === "range";
+        }
     }
 
     function updateArtboardRangeInput() {
         var isRange = selectedArtboardMode() === "range";
 
-        elements.artboardRangeInput.disabled = !isRange;
-        elements.artboardRangeNote.textContent = artboardLimitText();
+        if (elements.artboardRangeInput) {
+            elements.artboardRangeInput.disabled = !isRange;
+        }
+        if (elements.artboardRangeNote) {
+            elements.artboardRangeNote.textContent = artboardLimitText();
+        }
     }
 
     function updateArtboardControls() {
         setArtboardMode(state.artboards.mode);
-        elements.artboardRangeInput.value = state.artboards.range;
+        if (elements.artboardRangeInput) {
+            elements.artboardRangeInput.value = state.artboards.range;
+        }
         renderArtboardCards();
         updateArtboardRangeInput();
     }
 
     function syncArtboardStateFromControls() {
-        state.artboards.mode = selectedArtboardMode();
-        state.artboards.range = trim(elements.artboardRangeInput.value);
-        updateArtboardRangeInput();
+        state.artboards = readArtboardSelectionFromControls();
         renderArtboardCards();
+        updateArtboardRangeInput();
     }
 
     function getExtensionRoot() {
@@ -528,6 +578,21 @@
         return /^Error:/i.test(result || "");
     }
 
+    function updateDocumentInfo(defaults) {
+        documentInfo.artboardCount = defaults.artboardCount || 1;
+        documentInfo.activeArtboard = defaults.activeArtboard || 1;
+        documentInfo.artboardNames = defaults.artboardNames || [];
+        documentInfo.pdfPresets = defaults.pdfPresets || [];
+        updateVersionBadge(defaults.version || APP_VERSION);
+
+        if (!state.pdf.preset && documentInfo.pdfPresets.length) {
+            state.pdf.preset = documentInfo.pdfPresets[0];
+        } else {
+            state.pdf.preset = pdfPresetValue(state.pdf.preset);
+        }
+        state.artboards = normalizePersistedArtboards(state.artboards);
+    }
+
     function loadDefaults() {
         evalExporter("AIOExporter.getDefaultsJson();", function (result) {
             var defaults;
@@ -552,18 +617,14 @@
                 elements.baseNameInput.value = defaults.baseName;
             }
 
-            documentInfo.artboardCount = defaults.artboardCount || 1;
-            documentInfo.activeArtboard = defaults.activeArtboard || 1;
-            documentInfo.pdfPresets = defaults.pdfPresets || [];
-            updateVersionBadge(defaults.version || APP_VERSION);
+            updateDocumentInfo(defaults);
 
             savedSettings = readPersistedSettings();
             if (savedSettings) {
                 applyPersistedSettings(savedSettings);
             }
-            if (!state.pdf.preset && documentInfo.pdfPresets.length) {
-                state.pdf.preset = documentInfo.pdfPresets[0];
-            }
+            state.pdf.preset = pdfPresetValue(state.pdf.preset);
+            state.artboards = normalizePersistedArtboards(state.artboards);
             updateArtboardControls();
             updateSummaries();
             updateFormatRows();
@@ -574,6 +635,34 @@
             } else {
                 setStatus("Ready", false);
             }
+        });
+    }
+
+    function refreshRuntimeDefaults(callback) {
+        if (!cs) {
+            callback(false);
+            return;
+        }
+
+        evalExporter("AIOExporter.getDefaultsJson();", function (result) {
+            var defaults;
+
+            if (parseResultError(result)) {
+                callback(false);
+                return;
+            }
+
+            try {
+                defaults = JSON.parse(result || "{}");
+            } catch (error) {
+                callback(false);
+                return;
+            }
+
+            updateDocumentInfo(defaults);
+            updateArtboardControls();
+            updateSummaries();
+            callback(true);
         });
     }
 
@@ -779,6 +868,16 @@
     }
 
     function openSettings(format) {
+        if (format === "pdf" && cs) {
+            setStatus("Refreshing PDF presets...", false);
+            refreshRuntimeDefaults(function () {
+                renderSettingsModal(format);
+                elements.settingsModal.className = "modal";
+                setStatus("Ready", false);
+            });
+            return;
+        }
+
         renderSettingsModal(format);
         elements.settingsModal.className = "modal";
     }
@@ -946,8 +1045,20 @@
         return ranges.join(",");
     }
 
+    function allArtboardsSelected(numbers) {
+        var i;
+
+        for (i = 1; i <= documentInfo.artboardCount; i += 1) {
+            if (!numbers[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     function selectedArtboardNumbers() {
-        var mode = selectedArtboardMode();
+        var mode = state.artboards.mode;
         var numbers = {};
         var i;
 
@@ -959,10 +1070,33 @@
         }
 
         if (mode === "range") {
-            return numbersFromRange(elements.artboardRangeInput.value);
+            return numbersFromRange(state.artboards.range);
         }
 
         return numbers;
+    }
+
+    function selectionFromArtboardNumbers(numbers) {
+        var range = compactArtboardRange(numbers);
+
+        if (!range) {
+            return {
+                mode: "range",
+                range: ""
+            };
+        }
+
+        if (allArtboardsSelected(numbers)) {
+            return {
+                mode: "all",
+                range: ""
+            };
+        }
+
+        return {
+            mode: "range",
+            range: range
+        };
     }
 
     function renderArtboardCards() {
@@ -970,42 +1104,81 @@
         var html = "";
         var i;
         var count = Math.max(1, documentInfo.artboardCount || 1);
+        var classes;
+        var label;
 
         for (i = 1; i <= count; i += 1) {
+            classes = "artboard-card";
+            if (selected[i]) {
+                classes += " is-selected";
+            }
+            label = trim(documentInfo.artboardNames[i - 1] || "") || ("Artboard " + i);
             html +=
-                '<button class="artboard-card' + (selected[i] ? " is-selected" : "") + '" type="button" data-artboard="' + i + '">' +
-                '<span class="artboard-preview"><span class="artboard-check">&#10003;</span></span>' +
-                '<span class="artboard-label">Artboard ' + i + "</span>" +
-                "</button>";
+                '<label class="' + classes + '" title="' + escapeHtml(label) + '">' +
+                '<input class="artboard-checkbox" type="checkbox" data-artboard="' + i + '"' + (selected[i] ? " checked" : "") + ">" +
+                '<span class="artboard-name">' + escapeHtml(label) + "</span>" +
+                "</label>";
         }
 
         elements.artboardCards.innerHTML = html;
     }
 
-    function toggleArtboardCard(artboardNumber) {
-        var selected = selectedArtboardNumbers();
+    function readArtboardSelectionFromList() {
+        var selected = {};
+        var inputs = elements.artboardCards.querySelectorAll("input[data-artboard]");
+        var i;
+        var artboardNumber;
 
-        if (selected[artboardNumber]) {
-            delete selected[artboardNumber];
-        } else {
-            selected[artboardNumber] = true;
+        for (i = 0; i < inputs.length; i += 1) {
+            if (inputs[i].checked) {
+                artboardNumber = parseInt(inputs[i].getAttribute("data-artboard"), 10);
+                if (!isNaN(artboardNumber)) {
+                    selected[artboardNumber] = true;
+                }
+            }
         }
 
-        if (!compactArtboardRange(selected)) {
-            selected[artboardNumber] = true;
+        return selectionFromArtboardNumbers(selected);
+    }
+
+    function readArtboardSelectionFromControls() {
+        var mode = selectedArtboardMode();
+
+        if (mode === "range") {
+            return {
+                mode: "range",
+                range: trim(elements.artboardRangeInput ? elements.artboardRangeInput.value : "")
+            };
         }
 
-        setArtboardMode("range");
-        elements.artboardRangeInput.value = compactArtboardRange(selected);
-        syncArtboardStateFromControls();
+        return {
+            mode: "all",
+            range: ""
+        };
+    }
+
+    function applyArtboardSelectionFromList() {
+        state.artboards = readArtboardSelectionFromList();
+        setArtboardMode(state.artboards.mode);
+        if (elements.artboardRangeInput) {
+            elements.artboardRangeInput.value = state.artboards.range;
+        }
+        renderArtboardCards();
+        updateArtboardRangeInput();
     }
 
     function readArtboardSettings() {
-        var mode = selectedArtboardMode();
-        var range = trim(elements.artboardRangeInput.value);
+        var mode = state.artboards.mode;
+        var range = trim(state.artboards.range);
         var parsed;
 
         if (mode === "range") {
+            if (!range) {
+                return {
+                    error: "Select at least one artboard."
+                };
+            }
+
             parsed = parseArtboardRange(range);
             if (parsed.error) {
                 return {
@@ -1167,6 +1340,9 @@
             return "Select at least one export format.";
         }
         if (settings.artboards && settings.artboards.mode === "range") {
+            if (!trim(settings.artboards.range)) {
+                return "Select at least one artboard.";
+            }
             parsedArtboards = parseArtboardRange(settings.artboards.range);
             if (parsedArtboards.error) {
                 return parsedArtboards.error;
@@ -1225,26 +1401,11 @@
             syncArtboardStateFromControls();
             persistCurrentSettings();
         });
-        elements.artboardCards.addEventListener("click", function (event) {
+        elements.artboardCards.addEventListener("change", function (event) {
             var target = event.target;
-            var button;
-            var artboardNumber;
 
-            while (target && target !== elements.artboardCards) {
-                if (target.getAttribute && target.getAttribute("data-artboard")) {
-                    button = target;
-                    break;
-                }
-                target = target.parentNode;
-            }
-
-            if (!button) {
-                return;
-            }
-
-            artboardNumber = parseInt(button.getAttribute("data-artboard"), 10);
-            if (!isNaN(artboardNumber)) {
-                toggleArtboardCard(artboardNumber);
+            if (target && target.getAttribute && target.getAttribute("data-artboard")) {
+                applyArtboardSelectionFromList();
                 persistCurrentSettings();
             }
         });
