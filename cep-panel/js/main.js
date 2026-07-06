@@ -8,7 +8,7 @@
     var activeUpdateUrl = "";
     var activeUpdateVersion = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.3.8";
+    var APP_VERSION = "1.3.9";
     var GITHUB_REPO_URL = "https://github.com/char8294/Illustrator_Add-on";
     var GITHUB_RELEASES_URL = "https://github.com/char8294/Illustrator_Add-on/releases";
     var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/releases/latest";
