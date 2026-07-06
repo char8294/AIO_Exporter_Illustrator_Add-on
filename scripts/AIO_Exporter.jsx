@@ -6,6 +6,7 @@
 */
 (function () {
     var APP_NAME = "AIO Exporter";
+    var APP_VERSION = "1.1.0";
     var DEFAULT_BASE_NAME = "AIO_Exporter";
 
     function trim(value) {
@@ -104,6 +105,28 @@
         } catch (ignored) {}
 
         return 1;
+    }
+
+    function activeArtboardIndex(doc) {
+        try {
+            return doc.artboards.getActiveArtboardIndex();
+        } catch (ignored) {}
+
+        return -1;
+    }
+
+    function setActiveArtboardNumber(doc, number) {
+        doc.artboards.setActiveArtboardIndex(number - 1);
+    }
+
+    function restoreActiveArtboardIndex(doc, index) {
+        if (index < 0) {
+            return;
+        }
+
+        try {
+            doc.artboards.setActiveArtboardIndex(index);
+        } catch (ignored) {}
     }
 
     function normalizeArtboardMode(value) {
@@ -262,7 +285,7 @@
         var originalRect;
         var bleed;
 
-        if (settings.png.fullDocument || !settings.png.includeBleed) {
+        if (settings.png.fullDocument || !settings.png.artBoardClipping || !settings.png.includeBleed) {
             doc.exportFile(file, ExportType.PNG24, options);
             return;
         }
@@ -308,6 +331,18 @@
         return value === "PRESERVEPATHS" ? "PRESERVEPATHS" : "PRESERVEAPPEARANCE";
     }
 
+    function errorMessage(error) {
+        if (error && error.message) {
+            return error.message;
+        }
+
+        return String(error);
+    }
+
+    function isInvalidEnumerationError(error) {
+        return /invalid enumeration value/i.test(errorMessage(error));
+    }
+
     function compatibilityValue(key) {
         if (key === "ILLUSTRATOR8") {
             return Compatibility.ILLUSTRATOR8;
@@ -343,12 +378,69 @@
         return Compatibility.ILLUSTRATOR19;
     }
 
+    function assignCompatibility(options, key) {
+        var selectedValue;
+        var fallbacks = [
+            "ILLUSTRATOR19",
+            "ILLUSTRATOR17",
+            "ILLUSTRATOR16",
+            "ILLUSTRATOR15",
+            "ILLUSTRATOR14",
+            "ILLUSTRATOR13",
+            "ILLUSTRATOR12",
+            "ILLUSTRATOR11",
+            "ILLUSTRATOR10",
+            "ILLUSTRATOR9",
+            "ILLUSTRATOR8"
+        ];
+        var i;
+        var fallbackValue;
+
+        try {
+            selectedValue = compatibilityValue(key);
+        } catch (selectedValueError) {
+            selectedValue = undefined;
+        }
+
+        try {
+            if (typeof selectedValue !== "undefined") {
+                options.compatibility = selectedValue;
+            }
+            return;
+        } catch (selectedError) {}
+
+        for (i = 0; i < fallbacks.length; i += 1) {
+            if (fallbacks[i] === key) {
+                continue;
+            }
+
+            try {
+                fallbackValue = compatibilityValue(fallbacks[i]);
+                if (typeof fallbackValue !== "undefined") {
+                    options.compatibility = fallbackValue;
+                }
+                return;
+            } catch (fallbackError) {}
+        }
+    }
+
     function flattenOutputValue(key) {
         if (key === "PRESERVEPATHS") {
             return OutputFlattening.PRESERVEPATHS;
         }
 
         return OutputFlattening.PRESERVEAPPEARANCE;
+    }
+
+    function assignFlattenOutput(options, key) {
+        var value;
+
+        try {
+            value = flattenOutputValue(key);
+            if (typeof value !== "undefined") {
+                options.flattenOutput = value;
+            }
+        } catch (ignored) {}
     }
 
     function listToArray(value) {
@@ -370,6 +462,25 @@
         } catch (ignored) {}
 
         return [];
+    }
+
+    function validPdfPresetName(name) {
+        var presets;
+        var i;
+
+        name = trim(name || "");
+        if (!name) {
+            return "";
+        }
+
+        presets = pdfPresetNames();
+        for (i = 0; i < presets.length; i += 1) {
+            if (presets[i] === name) {
+                return name;
+            }
+        }
+
+        return "";
     }
 
     function quoteJson(value) {
@@ -405,7 +516,7 @@
         return !!(formats && (formats.ai || formats.pdf || formats.png));
     }
 
-    function buildFiles(folder, baseName, overwrite, formats, pdfArtboards) {
+    function buildFiles(folder, baseName, overwrite, formats, pdfArtboards, pngArtboards) {
         var safeBase = sanitizeFileName(baseName);
         var candidate = safeBase;
         var index = 1;
@@ -413,6 +524,7 @@
         var result;
         var i;
         var pdfFile;
+        var pngFile;
 
         do {
             files = [];
@@ -441,8 +553,21 @@
                 }
             }
             if (formats.png) {
-                result.png = new File(folder.fsName + "/" + candidate + ".png");
-                files.push(result.png);
+                if (pngArtboards && pngArtboards.length > 1) {
+                    result.pngList = [];
+                    for (i = 0; i < pngArtboards.length; i += 1) {
+                        pngFile = {
+                            artboard: pngArtboards[i],
+                            file: new File(folder.fsName + "/" + candidate + "_" + padNumber(pngArtboards[i]) + ".png")
+                        };
+                        result.pngList.push(pngFile);
+                        files.push(pngFile.file);
+                    }
+                } else {
+                    result.png = new File(folder.fsName + "/" + candidate + ".png");
+                    result.pngArtboard = pngArtboards && pngArtboards.length === 1 ? pngArtboards[0] : null;
+                    files.push(result.png);
+                }
             }
 
             if (overwrite || !hasAnyExisting(files)) {
@@ -562,24 +687,61 @@
         }
     }
 
-    function saveAi(doc, file, settings) {
-        var options = new IllustratorSaveOptions();
-        options.compatibility = compatibilityValue(settings.ai.compatibility);
+    function applyAiOptions(options, settings, includeEnumOptions) {
+        if (includeEnumOptions) {
+            assignCompatibility(options, settings.ai.compatibility);
+        }
+
         options.pdfCompatible = settings.ai.pdfCompatible;
         options.embedLinkedFiles = settings.ai.embedLinkedFiles;
         options.compressed = settings.ai.compressed;
         options.embedICCProfile = settings.ai.embedICCProfile;
         options.fontSubsetThreshold = settings.ai.fontSubsetThreshold;
-        options.flattenOutput = flattenOutputValue(settings.ai.flattenOutput);
-        applyArtboardRange(options, settings, true);
+
+        if (includeEnumOptions) {
+            assignFlattenOutput(options, settings.ai.flattenOutput);
+        }
+    }
+
+    function saveAiWithOptions(doc, file, settings, includeEnumOptions) {
+        var options = new IllustratorSaveOptions();
+        applyAiOptions(options, settings, includeEnumOptions);
         doc.saveAs(file, options);
+    }
+
+    function saveAi(doc, file, settings) {
+        try {
+            saveAiWithOptions(doc, file, settings, true);
+        } catch (error) {
+            if (!isInvalidEnumerationError(error)) {
+                throw error;
+            }
+
+            try {
+                saveAiWithOptions(doc, file, settings, false);
+            } catch (fallbackError) {
+                if (!isInvalidEnumerationError(fallbackError)) {
+                    throw fallbackError;
+                }
+
+                doc.saveAs(file);
+            }
+        }
     }
 
     function savePdf(doc, file, settings, artboardRangeOverride) {
         var options = new PDFSaveOptions();
-        if (settings.pdf.preset) {
-            options.pDFPreset = settings.pdf.preset;
-        } else {
+        var preset = validPdfPresetName(settings.pdf.preset);
+
+        if (preset) {
+            try {
+                options.pDFPreset = preset;
+            } catch (presetError) {
+                preset = "";
+            }
+        }
+
+        if (!preset) {
             options.preserveEditability = settings.pdf.preserveEditability;
             options.generateThumbnails = settings.pdf.generateThumbnails;
             options.viewAfterSaving = settings.pdf.viewAfterSaving;
@@ -604,6 +766,42 @@
         exportPngWithOptionalBleed(doc, file, options, settings);
     }
 
+    function exportPngArtboard(doc, file, settings, artboardNumber) {
+        var originalArtboardIndex = activeArtboardIndex(doc);
+
+        try {
+            if (artboardNumber && !settings.png.fullDocument) {
+                setActiveArtboardNumber(doc, artboardNumber);
+            }
+
+            exportPng(doc, file, settings);
+        } finally {
+            restoreActiveArtboardIndex(doc, originalArtboardIndex);
+        }
+    }
+
+    function runExportStep(label, action) {
+        try {
+            action();
+        } catch (error) {
+            throw new Error(label + " failed: " + errorMessage(error));
+        }
+    }
+
+    function currentUserInteractionLevel() {
+        try {
+            return app.userInteractionLevel;
+        } catch (ignored) {}
+
+        return null;
+    }
+
+    function setUserInteractionLevel(level) {
+        try {
+            app.userInteractionLevel = level;
+        } catch (ignored) {}
+    }
+
     function exportAll(settings) {
         if (app.documents.length === 0) {
             throw new Error("No Illustrator document is open.");
@@ -614,30 +812,53 @@
         validateSettings(settings);
 
         var pdfArtboards = settings.formats.pdf && settings.pdf.outputMode === "multiple" ? selectedArtboardNumbers(settings, doc) : null;
-        var files = buildFiles(settings.folder, settings.baseName, settings.overwrite, settings.formats, pdfArtboards);
-        var originalInteraction = app.userInteractionLevel;
+        var pngArtboards = settings.formats.png && !settings.png.fullDocument && settings.png.artBoardClipping ? selectedArtboardNumbers(settings, doc) : null;
+        var files = buildFiles(settings.folder, settings.baseName, settings.overwrite, settings.formats, pdfArtboards, pngArtboards);
+        var originalInteraction = currentUserInteractionLevel();
         var i;
 
         try {
-            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+            setUserInteractionLevel(UserInteractionLevel.DONTDISPLAYALERTS);
 
             if (settings.formats.pdf) {
                 if (files.pdfList) {
                     for (i = 0; i < files.pdfList.length; i += 1) {
-                        savePdf(doc, files.pdfList[i].file, settings, files.pdfList[i].artboard);
+                        (function (pdfFile) {
+                            runExportStep("PDF artboard " + pdfFile.artboard, function () {
+                                savePdf(doc, pdfFile.file, settings, pdfFile.artboard);
+                            });
+                        })(files.pdfList[i]);
                     }
                 } else {
-                    savePdf(doc, files.pdf, settings);
+                    runExportStep("PDF export", function () {
+                        savePdf(doc, files.pdf, settings);
+                    });
                 }
             }
             if (settings.formats.png) {
-                exportPng(doc, files.png, settings);
+                if (files.pngList) {
+                    for (i = 0; i < files.pngList.length; i += 1) {
+                        (function (pngFile) {
+                            runExportStep("PNG artboard " + pngFile.artboard, function () {
+                                exportPngArtboard(doc, pngFile.file, settings, pngFile.artboard);
+                            });
+                        })(files.pngList[i]);
+                    }
+                } else {
+                    runExportStep(files.pngArtboard ? "PNG artboard " + files.pngArtboard : "PNG export", function () {
+                        exportPngArtboard(doc, files.png, settings, files.pngArtboard);
+                    });
+                }
             }
             if (settings.formats.ai) {
-                saveAi(doc, files.ai, settings);
+                runExportStep("AI save", function () {
+                    saveAi(doc, files.ai, settings);
+                });
             }
         } finally {
-            app.userInteractionLevel = originalInteraction;
+            if (originalInteraction !== null) {
+                setUserInteractionLevel(originalInteraction);
+            }
         }
 
         return files;
@@ -674,6 +895,11 @@
         if (settings.formats.pdf && files.pdf) {
             paths.push(files.pdf.fsName);
         }
+        if (settings.formats.png && files.pngList) {
+            for (i = 0; i < files.pngList.length; i += 1) {
+                paths.push(files.pngList[i].file.fsName);
+            }
+        }
         if (settings.formats.png && files.png) {
             paths.push(files.png.fsName);
         }
@@ -693,6 +919,7 @@
             '"hasDocument":' + (hasDocument ? "true" : "false") + "," +
             '"artboardCount":' + totalArtboards + "," +
             '"activeArtboard":' + activeArtboard + "," +
+            '"version":' + quoteJson(APP_VERSION) + "," +
             '"pdfPresets":' + quoteJsonArray(pdfPresets) + "," +
             '"folder":' + quoteJson(folder.fsName) + "," +
             '"baseName":' + quoteJson(baseName) +
@@ -851,7 +1078,7 @@
         pngPanel.margins = 12;
         var pngTransparencyCheck = pngPanel.add("checkbox", undefined, "Transparent background");
         pngTransparencyCheck.value = true;
-        var pngArtboardCheck = pngPanel.add("checkbox", undefined, "Clip to active artboard");
+        var pngArtboardCheck = pngPanel.add("checkbox", undefined, "Clip to selected artboards");
         pngArtboardCheck.value = true;
         var pngIncludeBleedCheck = pngPanel.add("checkbox", undefined, "Include Bleed");
         pngIncludeBleedCheck.value = true;
@@ -910,7 +1137,7 @@
                 try {
                     parseArtboardRange(artboardRangeInput.text, artboardCount(doc));
                 } catch (error) {
-                    alert(error.message);
+                    alert(errorMessage(error));
                     return;
                 }
             }
@@ -973,7 +1200,7 @@
             exportAll(settings);
             return "Export complete: " + exportedLabels(settings);
         } catch (error) {
-            return "Error: " + error.message;
+            return "Error: " + errorMessage(error);
         }
     }
 
@@ -996,8 +1223,8 @@
             );
             return "Export complete: " + exportedLabels(settings);
         } catch (error) {
-            alert(APP_NAME + " failed:\n" + error.message);
-            return "Error: " + error.message;
+            alert(APP_NAME + " failed:\n" + errorMessage(error));
+            return "Error: " + errorMessage(error);
         }
     }
 

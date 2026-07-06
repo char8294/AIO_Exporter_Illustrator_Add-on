@@ -38,6 +38,14 @@ select {
     padding-bottom: 14px;
 }
 
+.header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
 h1,
 h2,
 p {
@@ -69,6 +77,12 @@ p {
     font-size: 12px;
     line-height: 1;
     padding: 6px 8px;
+}
+
+.update-button {
+    min-height: 28px;
+    padding: 0 9px;
+    font-size: 12px;
 }
 
 .section {
@@ -370,6 +384,12 @@ p {
 
 .secondary-button:active {
     background: #303030;
+}
+
+.secondary-button:disabled {
+    background: #303030;
+    color: #888;
+    cursor: default;
 }
 
 .icon-button {

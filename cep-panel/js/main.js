@@ -3,8 +3,12 @@
 
     var cs = typeof CSInterface === "function" ? new CSInterface() : null;
     var busy = false;
+    var updateBusy = false;
     var activeModalFormat = null;
     var STORAGE_KEY = "aioExporter.settings.v1";
+    var APP_VERSION = "1.1.0";
+    var GITHUB_RELEASES_URL = "https://github.com/char8294/Illustrator_Add-on/releases";
+    var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/releases/latest";
 
     var AI_COMPATIBILITY_OPTIONS = [
         ["ILLUSTRATOR19", "Illustrator 19"],
@@ -75,6 +79,8 @@
         artboardModeRange: document.getElementById("artboardModeRange"),
         artboardRangeInput: document.getElementById("artboardRangeInput"),
         artboardRangeNote: document.getElementById("artboardRangeNote"),
+        versionBadge: document.getElementById("versionBadge"),
+        updateButton: document.getElementById("updateButton"),
         exportButton: document.getElementById("exportButton"),
         statusText: document.getElementById("statusText"),
         settingsModal: document.getElementById("settingsModal"),
@@ -212,6 +218,160 @@
     function setStatus(message, isError) {
         elements.statusText.textContent = message;
         elements.statusText.className = isError ? "status error" : "status";
+    }
+
+    function normalizeVersion(value) {
+        var match = String(value || "").match(/\d+(?:\.\d+){0,2}/);
+        return match ? match[0] : "";
+    }
+
+    function versionParts(value) {
+        var normalized = normalizeVersion(value);
+        var pieces = normalized ? normalized.split(".") : [];
+        var parts = [];
+        var i;
+        var number;
+
+        for (i = 0; i < 3; i += 1) {
+            number = parseInt(pieces[i] || "0", 10);
+            parts.push(isNaN(number) ? 0 : number);
+        }
+
+        return parts;
+    }
+
+    function compareVersions(left, right) {
+        var leftParts = versionParts(left);
+        var rightParts = versionParts(right);
+        var i;
+
+        for (i = 0; i < 3; i += 1) {
+            if (leftParts[i] > rightParts[i]) {
+                return 1;
+            }
+            if (leftParts[i] < rightParts[i]) {
+                return -1;
+            }
+        }
+
+        return 0;
+    }
+
+    function updateVersionBadge(version) {
+        if (elements.versionBadge) {
+            elements.versionBadge.textContent = "v" + (normalizeVersion(version) || APP_VERSION);
+        }
+    }
+
+    function openExternalUrl(url) {
+        if (cs && typeof cs.openURLInDefaultBrowser === "function") {
+            cs.openURLInDefaultBrowser(url);
+            return;
+        }
+
+        window.open(url, "_blank");
+    }
+
+    function setUpdateBusy(nextBusy) {
+        updateBusy = nextBusy;
+        if (elements.updateButton) {
+            elements.updateButton.disabled = updateBusy;
+        }
+    }
+
+    function fetchLatestRelease(callback) {
+        var request;
+        var completed = false;
+
+        function finish(error, release) {
+            if (completed) {
+                return;
+            }
+
+            completed = true;
+            callback(error, release);
+        }
+
+        if (typeof XMLHttpRequest !== "function") {
+            finish(new Error("This CEP runtime cannot check GitHub directly."));
+            return;
+        }
+
+        request = new XMLHttpRequest();
+
+        request.open("GET", GITHUB_LATEST_RELEASE_API, true);
+        request.timeout = 8000;
+        request.onreadystatechange = function () {
+            var release;
+
+            if (request.readyState !== 4) {
+                return;
+            }
+
+            if (request.status < 200 || request.status >= 300) {
+                finish(new Error("GitHub releases are not available yet."));
+                return;
+            }
+
+            try {
+                release = JSON.parse(request.responseText || "{}");
+            } catch (error) {
+                finish(error);
+                return;
+            }
+
+            finish(null, release);
+        };
+        request.onerror = function () {
+            finish(new Error("Could not connect to GitHub."));
+        };
+        request.ontimeout = function () {
+            finish(new Error("GitHub update check timed out."));
+        };
+        try {
+            request.send();
+        } catch (error) {
+            finish(error);
+        }
+    }
+
+    function checkForUpdates() {
+        if (updateBusy) {
+            return;
+        }
+
+        setUpdateBusy(true);
+        setStatus("Checking GitHub for updates...", false);
+
+        fetchLatestRelease(function (error, release) {
+            var latestVersion;
+            var releaseUrl;
+
+            setUpdateBusy(false);
+
+            if (error) {
+                setStatus("Could not check GitHub. Opening releases page...", true);
+                openExternalUrl(GITHUB_RELEASES_URL);
+                return;
+            }
+
+            latestVersion = normalizeVersion(release.tag_name || release.name);
+            releaseUrl = release.html_url || GITHUB_RELEASES_URL;
+
+            if (!latestVersion) {
+                setStatus("Could not read latest version. Opening releases page...", true);
+                openExternalUrl(releaseUrl);
+                return;
+            }
+
+            if (compareVersions(latestVersion, APP_VERSION) > 0) {
+                setStatus("Update available: v" + latestVersion, false);
+                openExternalUrl(releaseUrl);
+                return;
+            }
+
+            setStatus("AIO Exporter v" + APP_VERSION + " is up to date.", false);
+        });
     }
 
     function escapeForExtendScript(value) {
@@ -395,6 +555,7 @@
             documentInfo.artboardCount = defaults.artboardCount || 1;
             documentInfo.activeArtboard = defaults.activeArtboard || 1;
             documentInfo.pdfPresets = defaults.pdfPresets || [];
+            updateVersionBadge(defaults.version || APP_VERSION);
 
             savedSettings = readPersistedSettings();
             if (savedSettings) {
@@ -1045,6 +1206,9 @@
 
         elements.browseButton.addEventListener("click", browseFolder);
         elements.exportButton.addEventListener("click", runExporter);
+        if (elements.updateButton) {
+            elements.updateButton.addEventListener("click", checkForUpdates);
+        }
         elements.modalCancelButton.addEventListener("click", closeSettings);
         elements.modalDoneButton.addEventListener("click", saveSettings);
         elements.overwriteCheckbox.addEventListener("change", persistCurrentSettings);
@@ -1116,6 +1280,7 @@
     }
 
     bindEvents();
+    updateVersionBadge(APP_VERSION);
     updateArtboardControls();
     updateSummaries();
     updateFormatRows();
