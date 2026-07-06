@@ -5,13 +5,24 @@
     var busy = false;
     var updateBusy = false;
     var activeModalFormat = null;
+    var activeUpdateUrl = "";
+    var activeUpdateVersion = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
     var APP_VERSION = "1.3.6";
     var GITHUB_REPO_URL = "https://github.com/char8294/Illustrator_Add-on";
     var GITHUB_RELEASES_URL = "https://github.com/char8294/Illustrator_Add-on/releases";
     var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/releases/latest";
     var GITHUB_TAGS_API = "https://api.github.com/repos/char8294/Illustrator_Add-on/tags";
-    var GITHUB_RAW_MAIN_JS_URL = "https://raw.githubusercontent.com/char8294/Illustrator_Add-on/main/cep-panel/js/main.js";
+    var GITHUB_RAW_PANEL_BASE_URL = "https://raw.githubusercontent.com/char8294/Illustrator_Add-on/main/cep-panel/";
+    var GITHUB_RAW_MAIN_JS_URL = GITHUB_RAW_PANEL_BASE_URL + "js/main.js";
+    var UPDATE_FILE_PATHS = [
+        "CSXS/manifest.xml",
+        "css/styles.css",
+        "index.html",
+        "js/CSInterface.js",
+        "js/main.js",
+        "jsx/AIO_Exporter.jsx"
+    ];
 
     var AI_COMPATIBILITY_OPTIONS = [
         ["ILLUSTRATOR19", "Illustrator 2020"],
@@ -443,22 +454,160 @@
         });
     }
 
+    function getCepFileSystem() {
+        return window.cep && window.cep.fs ? window.cep.fs : null;
+    }
+
+    function extensionFilePath(extensionRoot, relativePath) {
+        return String(extensionRoot || "").replace(/[\\\/]+$/, "") + "/" + relativePath;
+    }
+
+    function writeUpdateFile(extensionRoot, relativePath, contents) {
+        var fs = getCepFileSystem();
+        var hasEncoding = window.cep && window.cep.encoding && typeof window.cep.encoding.UTF8 !== "undefined";
+        var encoding = hasEncoding ? window.cep.encoding.UTF8 : null;
+        var result;
+
+        if (!fs || typeof fs.writeFile !== "function") {
+            return new Error("CEP file writer is not available.");
+        }
+
+        try {
+            result = hasEncoding ?
+                fs.writeFile(extensionFilePath(extensionRoot, relativePath), contents, encoding) :
+                fs.writeFile(extensionFilePath(extensionRoot, relativePath), contents);
+        } catch (error) {
+            return error;
+        }
+
+        if (result && result.err && result.err !== 0) {
+            return new Error("Could not write " + relativePath + " (CEP error " + result.err + ").");
+        }
+
+        return null;
+    }
+
+    function fetchUpdateFiles(index, files, callback) {
+        var relativePath;
+
+        if (index >= UPDATE_FILE_PATHS.length) {
+            callback(null, files);
+            return;
+        }
+
+        relativePath = UPDATE_FILE_PATHS[index];
+        setStatus("Downloading update file " + (index + 1) + "/" + UPDATE_FILE_PATHS.length + "...", false);
+
+        fetchUrl(GITHUB_RAW_PANEL_BASE_URL + relativePath, function (error, text) {
+            if (error) {
+                callback(error);
+                return;
+            }
+
+            files.push({
+                path: relativePath,
+                text: text
+            });
+            fetchUpdateFiles(index + 1, files, callback);
+        });
+    }
+
+    function writeUpdateFiles(extensionRoot, files) {
+        var error;
+        var i;
+
+        for (i = 0; i < files.length; i += 1) {
+            error = writeUpdateFile(extensionRoot, files[i].path, files[i].text);
+            if (error) {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    function installUpdateFromGitHub(updateUrl, latestVersion) {
+        var extensionRoot = getExtensionRoot();
+        var fs = getCepFileSystem();
+
+        if (!extensionRoot || !fs || typeof fs.writeFile !== "function") {
+            setStatus("Automatic update is unavailable. Opening GitHub update page...", true);
+            openExternalUrl(updateUrl || GITHUB_RELEASES_URL);
+            return;
+        }
+
+        setUpdateBusy(true);
+        fetchUpdateFiles(0, [], function (downloadError, files) {
+            var writeError;
+
+            if (downloadError) {
+                setUpdateBusy(false);
+                setStatus("Update download failed. Opening GitHub update page...", true);
+                openExternalUrl(updateUrl || GITHUB_RELEASES_URL);
+                return;
+            }
+
+            setStatus("Installing update files...", false);
+            writeError = writeUpdateFiles(extensionRoot, files);
+            setUpdateBusy(false);
+
+            if (writeError) {
+                setStatus("Update install failed. Opening GitHub update page...", true);
+                openExternalUrl(updateUrl || GITHUB_RELEASES_URL);
+                return;
+            }
+
+            APP_VERSION = normalizeVersion(latestVersion) || APP_VERSION;
+            updateVersionBadge(APP_VERSION);
+            setStatus("Update installed. Restart Illustrator to load v" + APP_VERSION + ".", false);
+        });
+    }
+
+    function openUpdateLinkModal(title, messageHtml, primaryLabel, url) {
+        activeModalFormat = "update";
+        activeUpdateUrl = url || GITHUB_RELEASES_URL;
+        activeUpdateVersion = "";
+        elements.modalTitle.textContent = title || "Update";
+        elements.modalBody.innerHTML =
+            '<div class="info-line">' +
+            '<span class="info-icon" aria-hidden="true">i</span>' +
+            '<span>' + messageHtml + "</span>" +
+            "</div>";
+        elements.modalCancelButton.textContent = "Cancel";
+        elements.modalDoneButton.textContent = primaryLabel || "Update";
+        elements.settingsModal.className = "modal";
+    }
+
+    function openUpdateAvailableModal(latestVersion, releaseUrl) {
+        openUpdateLinkModal(
+            "Update available",
+            "AIO Exporter v" + escapeHtml(latestVersion) + " is available.<br>" +
+                "Installed version: v" + escapeHtml(APP_VERSION) + "<br>" +
+                "Click Update to install from GitHub, then restart Illustrator.",
+            "Update",
+            releaseUrl
+        );
+        activeUpdateVersion = normalizeVersion(latestVersion);
+    }
+
     function showUpdateCheckFallback(message, url) {
-        setStatus(message || "Opening GitHub releases page...", false);
-        openExternalUrl(url || GITHUB_RELEASES_URL);
+        var fallbackMessage = message || "GitHub update check is unavailable. Open GitHub releases?";
+
+        setStatus(fallbackMessage, false);
+        openUpdateLinkModal("GitHub update check", escapeHtml(fallbackMessage), "Open GitHub", url || GITHUB_RELEASES_URL);
     }
 
     function finishUpdateCheck(latestVersion, releaseUrl) {
         releaseUrl = releaseUrl || GITHUB_RELEASES_URL;
 
         if (!latestVersion) {
-            showUpdateCheckFallback("No published update version found. Opening GitHub releases...");
+            showUpdateCheckFallback("No published update version found. Open GitHub releases?", GITHUB_RELEASES_URL);
             return;
         }
 
         if (compareVersions(latestVersion, APP_VERSION) > 0) {
             setStatus("Update available: v" + latestVersion, false);
-            openExternalUrl(releaseUrl);
+            openUpdateAvailableModal(latestVersion, releaseUrl);
             return;
         }
 
@@ -496,7 +645,7 @@
                     setUpdateBusy(false);
 
                     if (sourceError) {
-                        showUpdateCheckFallback("GitHub update check is unavailable. Opening repository...", GITHUB_REPO_URL);
+                        showUpdateCheckFallback("GitHub update check is unavailable. Open repository?", GITHUB_REPO_URL);
                         return;
                     }
 
@@ -874,6 +1023,10 @@
         normalizeAiState();
 
         elements.modalTitle.textContent = "Settings";
+        elements.modalCancelButton.textContent = "Cancel";
+        elements.modalDoneButton.textContent = "Done";
+        activeUpdateUrl = "";
+        activeUpdateVersion = "";
         elements.modalBody.innerHTML =
             '<div class="modal-tabs" role="tablist">' +
             tabButtonHtml("ai", "AI") +
@@ -1014,7 +1167,32 @@
 
     function closeSettings() {
         activeModalFormat = null;
+        activeUpdateUrl = "";
+        activeUpdateVersion = "";
         elements.settingsModal.className = "modal is-hidden";
+    }
+
+    function confirmUpdateLink() {
+        var url = activeUpdateUrl || GITHUB_RELEASES_URL;
+        var latestVersion = activeUpdateVersion;
+
+        closeSettings();
+        if (!latestVersion) {
+            setStatus("Opening GitHub update page...", false);
+            openExternalUrl(url);
+            return;
+        }
+
+        installUpdateFromGitHub(url, latestVersion);
+    }
+
+    function handleModalDone() {
+        if (activeModalFormat === "update") {
+            confirmUpdateLink();
+            return;
+        }
+
+        saveSettings();
     }
 
     function checked(id) {
@@ -1522,7 +1700,7 @@
             elements.updateButton.addEventListener("click", checkForUpdates);
         }
         elements.modalCancelButton.addEventListener("click", closeSettings);
-        elements.modalDoneButton.addEventListener("click", saveSettings);
+        elements.modalDoneButton.addEventListener("click", handleModalDone);
         elements.overwriteCheckbox.addEventListener("change", persistCurrentSettings);
         elements.artboardModeAll.addEventListener("change", function () {
             syncArtboardStateFromControls();
