@@ -1,6 +1,6 @@
 # AIO Exporter for Adobe Illustrator 2026
 
-AIO Exporter v1.3.9 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
+AIO Exporter v1.4.0 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
 
 - `.ai`
 - `.pdf`
@@ -37,6 +37,22 @@ Window > Extensions > AIO Exporter
 ```
 
 The installer copies `cep-panel` into the user CEP extensions folder, enables unsigned CEP panels for local development, and removes the old `com.local.tripleformatexporter` install folder if it exists.
+
+## Uninstall the CEP Panel
+
+Double-click:
+
+```text
+Uninstall-CEP-Panel.bat
+```
+
+Or run:
+
+```powershell
+.\Uninstall-CEP-Panel.ps1
+```
+
+The uninstaller removes only the `com.local.aioexporter` CEP extension folder from the user CEP extensions folder. It leaves Adobe CEP debug registry settings unchanged in case another local CEP extension still needs them.
 
 ## Run the Fallback Script Directly
 
