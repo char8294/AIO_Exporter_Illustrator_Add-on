@@ -1,6 +1,6 @@
 # AIO Exporter for Adobe Illustrator 2026
 
-AIO Exporter v1.4.0 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
+AIO Exporter v1.4.2 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
 
 - `.ai`
 - `.pdf`
