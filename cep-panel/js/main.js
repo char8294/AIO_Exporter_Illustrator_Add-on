@@ -8,14 +8,18 @@
     var activeUpdateUrl = "";
     var activeUpdateVersion = "";
     var activeUpdateRef = "";
+    var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.4.3";
+    var APP_VERSION = "1.4.4";
+    var GITHUB_OWNER = "char8294";
+    var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
     var GITHUB_RELEASES_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on/releases";
     var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/AIO_Exporter_Illustrator_Add-on/releases/latest";
     var GITHUB_TAGS_API = "https://api.github.com/repos/char8294/AIO_Exporter_Illustrator_Add-on/tags";
     var GITHUB_RAW_REPO_BASE_URL = "https://raw.githubusercontent.com/char8294/AIO_Exporter_Illustrator_Add-on/";
     var GITHUB_RAW_MAIN_JS_URL = GITHUB_RAW_REPO_BASE_URL + "main/cep-panel/js/main.js";
+    var GITHUB_CODELOAD_TAG_ZIP_URL = "https://codeload.github.com/" + GITHUB_OWNER + "/" + GITHUB_REPO + "/zip/refs/tags/";
     var UPDATE_FILE_PATHS = [
         "CSXS/manifest.xml",
         "css/styles.css",
@@ -376,7 +380,7 @@
             }
 
             if (request.status < 200 || request.status >= 300) {
-                finish(new Error("GitHub releases are not available yet."));
+                finish(new Error("GitHub returned HTTP " + request.status + " for " + url + "."));
                 return;
             }
 
@@ -441,6 +445,15 @@
 
     function releaseRef(release) {
         return trim(release && (release.tag_name || release.name));
+    }
+
+    function archiveUrlForRef(ref) {
+        ref = trim(ref);
+        return ref ? GITHUB_CODELOAD_TAG_ZIP_URL + encodeURIComponent(ref) : "";
+    }
+
+    function releaseArchiveUrl(release, ref) {
+        return trim(release && release.zipball_url) || archiveUrlForRef(ref);
     }
 
     function rawPanelBaseUrl(ref) {
@@ -623,6 +636,351 @@
         return null;
     }
 
+    function getNodeRequire() {
+        var nodeRequire = null;
+
+        try {
+            if (typeof require === "function") {
+                nodeRequire = require;
+            }
+        } catch (ignoredRequire) {}
+
+        try {
+            if (!nodeRequire && window.cep_node && typeof window.cep_node.require === "function") {
+                nodeRequire = window.cep_node.require;
+            }
+        } catch (ignoredCepNode) {}
+
+        return nodeRequire;
+    }
+
+    function getNodeUpdateModules() {
+        var nodeRequire = getNodeRequire();
+
+        if (!nodeRequire) {
+            return {
+                error: new Error("Zip updater needs Node.js support. Install this version once with Install-CEP-Panel.ps1.")
+            };
+        }
+
+        try {
+            return {
+                fs: nodeRequire("fs"),
+                path: nodeRequire("path"),
+                os: nodeRequire("os"),
+                http: nodeRequire("http"),
+                https: nodeRequire("https"),
+                url: nodeRequire("url"),
+                childProcess: nodeRequire("child_process")
+            };
+        } catch (error) {
+            return {
+                error: error
+            };
+        }
+    }
+
+    function nodeEnsureDirectory(dirPath, modules) {
+        var parent;
+
+        if (!dirPath || modules.fs.existsSync(dirPath)) {
+            return;
+        }
+
+        parent = modules.path.dirname(dirPath);
+        if (parent && parent !== dirPath) {
+            nodeEnsureDirectory(parent, modules);
+        }
+        modules.fs.mkdirSync(dirPath);
+    }
+
+    function nodeRemoveDirectory(dirPath, modules) {
+        var entries;
+        var i;
+        var entryPath;
+        var stat;
+
+        if (!dirPath || !modules.fs.existsSync(dirPath)) {
+            return;
+        }
+
+        entries = modules.fs.readdirSync(dirPath);
+        for (i = 0; i < entries.length; i += 1) {
+            entryPath = modules.path.join(dirPath, entries[i]);
+            stat = modules.fs.lstatSync(entryPath);
+            if (stat.isDirectory() && !stat.isSymbolicLink()) {
+                nodeRemoveDirectory(entryPath, modules);
+            } else {
+                modules.fs.unlinkSync(entryPath);
+            }
+        }
+        modules.fs.rmdirSync(dirPath);
+    }
+
+    function nodeCopyDirectory(sourceDir, targetDir, modules) {
+        var entries = modules.fs.readdirSync(sourceDir);
+        var i;
+        var sourcePath;
+        var targetPath;
+        var stat;
+
+        nodeEnsureDirectory(targetDir, modules);
+        for (i = 0; i < entries.length; i += 1) {
+            sourcePath = modules.path.join(sourceDir, entries[i]);
+            targetPath = modules.path.join(targetDir, entries[i]);
+            stat = modules.fs.lstatSync(sourcePath);
+
+            if (stat.isDirectory() && !stat.isSymbolicLink()) {
+                nodeCopyDirectory(sourcePath, targetPath, modules);
+            } else {
+                modules.fs.copyFileSync(sourcePath, targetPath);
+            }
+        }
+    }
+
+    function nodeIsPanelDirectory(dirPath, modules) {
+        return !!(
+            dirPath &&
+            modules.fs.existsSync(modules.path.join(dirPath, "index.html")) &&
+            modules.fs.existsSync(modules.path.join(dirPath, "js", "main.js")) &&
+            modules.fs.existsSync(modules.path.join(dirPath, "jsx", "AIO_Exporter.jsx")) &&
+            modules.fs.existsSync(modules.path.join(dirPath, "CSXS", "manifest.xml"))
+        );
+    }
+
+    function nodeFindCepPanelDirectory(rootDir, modules) {
+        var entries;
+        var i;
+        var entryPath;
+        var cepPanelPath;
+
+        if (nodeIsPanelDirectory(rootDir, modules)) {
+            return rootDir;
+        }
+
+        cepPanelPath = modules.path.join(rootDir, "cep-panel");
+        if (nodeIsPanelDirectory(cepPanelPath, modules)) {
+            return cepPanelPath;
+        }
+
+        entries = modules.fs.readdirSync(rootDir);
+        for (i = 0; i < entries.length; i += 1) {
+            entryPath = modules.path.join(rootDir, entries[i]);
+            if (!modules.fs.lstatSync(entryPath).isDirectory()) {
+                continue;
+            }
+            if (nodeIsPanelDirectory(entryPath, modules)) {
+                return entryPath;
+            }
+            cepPanelPath = modules.path.join(entryPath, "cep-panel");
+            if (nodeIsPanelDirectory(cepPanelPath, modules)) {
+                return cepPanelPath;
+            }
+        }
+
+        return "";
+    }
+
+    function validateNodePanelDirectory(panelDir, latestVersion, modules) {
+        var mainJsPath = modules.path.join(panelDir, "js", "main.js");
+        var mainJs;
+        var match;
+        var downloadedVersion;
+
+        if (!nodeIsPanelDirectory(panelDir, modules)) {
+            return new Error("Downloaded archive does not include a valid cep-panel folder.");
+        }
+
+        mainJs = modules.fs.readFileSync(mainJsPath, "utf8");
+        match = String(mainJs || "").match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
+        if (!match) {
+            return new Error("Downloaded update does not include a readable app version.");
+        }
+
+        downloadedVersion = normalizeVersion(match[1]);
+        if (latestVersion && compareVersions(downloadedVersion, latestVersion) !== 0) {
+            return new Error("Downloaded update version v" + downloadedVersion + " does not match v" + latestVersion + ".");
+        }
+
+        return null;
+    }
+
+    function nodeDownloadFile(url, targetPath, modules, redirectCount, callback) {
+        var parsed;
+        var transport;
+        var request;
+        var completed = false;
+
+        function finish(error) {
+            if (completed) {
+                return;
+            }
+            completed = true;
+            callback(error);
+        }
+
+        if (!url) {
+            finish(new Error("Update archive URL is missing."));
+            return;
+        }
+        if (redirectCount > 5) {
+            finish(new Error("GitHub archive download redirected too many times."));
+            return;
+        }
+
+        parsed = modules.url.parse(url);
+        transport = parsed.protocol === "http:" ? modules.http : modules.https;
+        request = transport.get({
+            protocol: parsed.protocol,
+            hostname: parsed.hostname,
+            port: parsed.port,
+            path: parsed.path,
+            headers: {
+                "User-Agent": "AIO-Exporter-Updater/" + APP_VERSION,
+                "Accept": "application/octet-stream"
+            }
+        }, function (response) {
+            var output;
+            var redirectUrl;
+
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                redirectUrl = modules.url.resolve(url, response.headers.location);
+                response.resume();
+                nodeDownloadFile(redirectUrl, targetPath, modules, redirectCount + 1, callback);
+                completed = true;
+                return;
+            }
+
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                response.resume();
+                finish(new Error("GitHub archive download returned HTTP " + response.statusCode + "."));
+                return;
+            }
+
+            output = modules.fs.createWriteStream(targetPath);
+            output.on("error", function (error) {
+                try {
+                    if (modules.fs.existsSync(targetPath)) {
+                        modules.fs.unlinkSync(targetPath);
+                    }
+                } catch (ignoredUnlink) {}
+                finish(error);
+            });
+            output.on("finish", function () {
+                output.close(function () {
+                    finish(null);
+                });
+            });
+            response.on("error", finish);
+            response.pipe(output);
+        });
+
+        request.setTimeout(45000, function () {
+            request.abort();
+            finish(new Error("GitHub archive download timed out."));
+        });
+        request.on("error", finish);
+    }
+
+    function nodeExpandZip(zipPath, destinationPath, modules, callback) {
+        var command = "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force";
+
+        modules.childProcess.execFile(
+            "powershell.exe",
+            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command, zipPath, destinationPath],
+            {
+                windowsHide: true
+            },
+            function (error, stdout, stderr) {
+                if (error) {
+                    callback(new Error("Could not extract update archive: " + describeUpdateError(stderr || error)));
+                    return;
+                }
+                callback(null);
+            }
+        );
+    }
+
+    function installZipUpdate(extensionRoot, latestVersion, updateRef, archiveUrl, callback) {
+        var modules = getNodeUpdateModules();
+        var tempRoot;
+        var zipPath;
+        var extractRoot;
+        var backupRoot;
+
+        if (modules.error) {
+            callback(modules.error);
+            return;
+        }
+
+        try {
+            tempRoot = modules.fs.mkdtempSync(modules.path.join(modules.os.tmpdir(), "aio-exporter-update-"));
+            zipPath = modules.path.join(tempRoot, "update.zip");
+            extractRoot = modules.path.join(tempRoot, "extract");
+            backupRoot = modules.path.join(tempRoot, "backup");
+            nodeEnsureDirectory(extractRoot, modules);
+        } catch (error) {
+            callback(error);
+            return;
+        }
+
+        setStatus("Downloading update archive...", false);
+        nodeDownloadFile(archiveUrl || archiveUrlForRef(updateRef), zipPath, modules, 0, function (downloadError) {
+            if (downloadError) {
+                try {
+                    nodeRemoveDirectory(tempRoot, modules);
+                } catch (ignoredDownloadCleanup) {}
+                callback(downloadError);
+                return;
+            }
+
+            setStatus("Extracting update archive...", false);
+            nodeExpandZip(zipPath, extractRoot, modules, function (extractError) {
+                var panelDir;
+                var validationError;
+
+                if (extractError) {
+                    try {
+                        nodeRemoveDirectory(tempRoot, modules);
+                    } catch (ignoredExtractCleanup) {}
+                    callback(extractError);
+                    return;
+                }
+
+                try {
+                    panelDir = nodeFindCepPanelDirectory(extractRoot, modules);
+                    validationError = validateNodePanelDirectory(panelDir, latestVersion, modules);
+                    if (validationError) {
+                        throw validationError;
+                    }
+
+                    setStatus("Backing up current panel...", false);
+                    nodeCopyDirectory(extensionRoot, backupRoot, modules);
+
+                    setStatus("Installing update files...", false);
+                    nodeCopyDirectory(panelDir, extensionRoot, modules);
+
+                    try {
+                        nodeRemoveDirectory(tempRoot, modules);
+                    } catch (ignoredSuccessCleanup) {}
+                    callback(null);
+                } catch (installError) {
+                    try {
+                        if (backupRoot && modules.fs.existsSync(backupRoot)) {
+                            nodeCopyDirectory(backupRoot, extensionRoot, modules);
+                        }
+                    } catch (rollbackError) {
+                        installError = new Error(describeUpdateError(installError) + " Rollback also failed: " + describeUpdateError(rollbackError));
+                    }
+                    try {
+                        nodeRemoveDirectory(tempRoot, modules);
+                    } catch (ignoredInstallCleanup) {}
+                    callback(installError);
+                }
+            });
+        });
+    }
+
     function fetchUpdateFiles(updateRef, index, files, callback) {
         var relativePath;
 
@@ -684,44 +1042,25 @@
         return writeError;
     }
 
-    function installUpdateFromGitHub(updateUrl, latestVersion, updateRef) {
-        var extensionRoot = getExtensionRoot();
-        var fs = getCepFileSystem();
+    function installUpdateFromGitHub(updateUrl, latestVersion, updateRef, archiveUrl) {
+        var extensionRoot = normalizeCepSystemPath(getExtensionRoot());
 
         if (!updateRef) {
             showUpdateCheckFallback("Automatic update needs a published GitHub release or tag. Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
             return;
         }
 
-        if (!extensionRoot || !fs || typeof fs.writeFile !== "function" || typeof fs.readFile !== "function") {
+        if (!extensionRoot) {
             showUpdateCheckFallback("Automatic update is unavailable in this CEP runtime. Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
             return;
         }
 
         setUpdateBusy(true);
-        fetchUpdateFiles(updateRef, 0, [], function (downloadError, files) {
-            var validationError;
-            var writeError;
-
-            if (downloadError) {
-                setUpdateBusy(false);
-                showUpdateCheckFallback("Update download failed: " + describeUpdateError(downloadError) + ". Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
-                return;
-            }
-
-            validationError = validateUpdateFiles(files, latestVersion);
-            if (validationError) {
-                setUpdateBusy(false);
-                showUpdateCheckFallback("Update validation failed: " + describeUpdateError(validationError) + ". Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
-                return;
-            }
-
-            setStatus("Installing update files...", false);
-            writeError = writeUpdateFilesWithRollback(extensionRoot, files);
+        installZipUpdate(extensionRoot, latestVersion, updateRef, archiveUrl, function (installError) {
             setUpdateBusy(false);
 
-            if (writeError) {
-                showUpdateCheckFallback("Update install failed: " + describeUpdateError(writeError) + ". Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
+            if (installError) {
+                showUpdateCheckFallback("Update install failed: " + describeUpdateError(installError) + ". Open GitHub update page?", updateUrl || GITHUB_RELEASES_URL, true, "Update failed");
                 return;
             }
 
@@ -736,6 +1075,7 @@
         activeUpdateUrl = url || GITHUB_RELEASES_URL;
         activeUpdateVersion = "";
         activeUpdateRef = "";
+        activeUpdateArchiveUrl = "";
         elements.modalTitle.textContent = title || "Update";
         elements.modalBody.innerHTML =
             '<div class="info-line">' +
@@ -746,17 +1086,18 @@
         elements.settingsModal.className = "modal";
     }
 
-    function openUpdateAvailableModal(latestVersion, releaseUrl, updateRef) {
+    function openUpdateAvailableModal(latestVersion, releaseUrl, updateRef, archiveUrl) {
         openUpdateLinkModal(
             "Update available",
             "AIO Exporter v" + escapeHtml(latestVersion) + " is available.<br>" +
                 "Installed version: v" + escapeHtml(APP_VERSION) + "<br>" +
-                "Click Update to install from GitHub, then restart Illustrator.",
+                "Click Update to download the GitHub archive and install, then restart Illustrator.",
             "Update",
             releaseUrl
         );
         activeUpdateVersion = normalizeVersion(latestVersion);
         activeUpdateRef = trim(updateRef);
+        activeUpdateArchiveUrl = trim(archiveUrl);
     }
 
     function showUpdateCheckFallback(message, url, isError, title) {
@@ -766,8 +1107,9 @@
         openUpdateLinkModal(title || "GitHub update check", escapeHtml(fallbackMessage), "Open GitHub", url || GITHUB_RELEASES_URL);
     }
 
-    function finishUpdateCheck(latestVersion, releaseUrl, updateRef) {
+    function finishUpdateCheck(latestVersion, releaseUrl, updateRef, archiveUrl) {
         releaseUrl = releaseUrl || GITHUB_RELEASES_URL;
+        archiveUrl = trim(archiveUrl) || archiveUrlForRef(updateRef);
 
         if (!latestVersion) {
             showUpdateCheckFallback("No published update version found. Open GitHub releases?", GITHUB_RELEASES_URL);
@@ -776,7 +1118,7 @@
 
         if (compareVersions(latestVersion, APP_VERSION) > 0) {
             setStatus("Update available: v" + latestVersion, false);
-            openUpdateAvailableModal(latestVersion, releaseUrl, updateRef);
+            openUpdateAvailableModal(latestVersion, releaseUrl, updateRef, archiveUrl);
             return;
         }
 
@@ -795,20 +1137,22 @@
             var latestVersion;
             var releaseUrl;
             var updateRef;
+            var archiveUrl;
 
             if (!error) {
                 latestVersion = releaseVersion(release);
                 releaseUrl = release.html_url || GITHUB_RELEASES_URL;
                 updateRef = releaseRef(release);
+                archiveUrl = releaseArchiveUrl(release, updateRef);
                 setUpdateBusy(false);
-                finishUpdateCheck(latestVersion, releaseUrl, updateRef);
+                finishUpdateCheck(latestVersion, releaseUrl, updateRef, archiveUrl);
                 return;
             }
 
             fetchLatestTag(function (tagError, tag) {
                 if (!tagError) {
                     setUpdateBusy(false);
-                    finishUpdateCheck(releaseVersion(tag), GITHUB_RELEASES_URL, releaseRef(tag));
+                    finishUpdateCheck(releaseVersion(tag), GITHUB_RELEASES_URL, releaseRef(tag), archiveUrlForRef(releaseRef(tag)));
                     return;
                 }
 
@@ -1403,6 +1747,7 @@
         activeUpdateUrl = "";
         activeUpdateVersion = "";
         activeUpdateRef = "";
+        activeUpdateArchiveUrl = "";
         elements.settingsModal.className = "modal is-hidden";
     }
 
@@ -1410,6 +1755,7 @@
         var url = activeUpdateUrl || GITHUB_RELEASES_URL;
         var latestVersion = activeUpdateVersion;
         var updateRef = activeUpdateRef;
+        var archiveUrl = activeUpdateArchiveUrl;
 
         closeSettings();
         if (!latestVersion) {
@@ -1418,7 +1764,7 @@
             return;
         }
 
-        installUpdateFromGitHub(url, latestVersion, updateRef);
+        installUpdateFromGitHub(url, latestVersion, updateRef, archiveUrl);
     }
 
     function handleModalDone() {
