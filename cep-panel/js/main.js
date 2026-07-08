@@ -10,7 +10,7 @@
     var activeUpdateRef = "";
     var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.4.5";
+    var APP_VERSION = "1.4.7";
     var GITHUB_OWNER = "char8294";
     var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
@@ -453,7 +453,7 @@
     }
 
     function releaseArchiveUrl(release, ref) {
-        return trim(release && release.zipball_url) || archiveUrlForRef(ref);
+        return archiveUrlForRef(ref || releaseRef(release));
     }
 
     function rawPanelBaseUrl(ref) {
@@ -837,7 +837,7 @@
             path: parsed.path,
             headers: {
                 "User-Agent": "AIO-Exporter-Updater/" + APP_VERSION,
-                "Accept": "application/octet-stream"
+                "Accept": "*/*"
             }
         }, function (response) {
             var output;
