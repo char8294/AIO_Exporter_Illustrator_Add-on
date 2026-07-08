@@ -10,7 +10,7 @@
     var activeUpdateRef = "";
     var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.4.7";
+    var APP_VERSION = "1.4.9";
     var GITHUB_OWNER = "char8294";
     var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
@@ -882,12 +882,27 @@
         request.on("error", finish);
     }
 
+    function powershellQuote(value) {
+        return "'" + String(value || "").replace(/'/g, "''") + "'";
+    }
+
     function nodeExpandZip(zipPath, destinationPath, modules, callback) {
-        var command = "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force";
+        var command;
+
+        if (!zipPath || !destinationPath) {
+            callback(new Error("Update archive path is missing."));
+            return;
+        }
+
+        command = "$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath " +
+            powershellQuote(zipPath) +
+            " -DestinationPath " +
+            powershellQuote(destinationPath) +
+            " -Force";
 
         modules.childProcess.execFile(
             "powershell.exe",
-            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command, zipPath, destinationPath],
+            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
             {
                 windowsHide: true
             },
