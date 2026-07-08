@@ -6,7 +6,7 @@
 */
 (function () {
     var APP_NAME = "AIO Exporter";
-    var APP_VERSION = "1.4.2";
+    var APP_VERSION = "1.4.3";
     var DEFAULT_BASE_NAME = "AIO_Exporter";
 
     function trim(value) {
@@ -130,6 +130,27 @@
                 name = "";
             }
             names.push(name || ("Artboard " + (i + 1)));
+        }
+
+        return names;
+    }
+
+    function artboardName(doc, artboardNumber) {
+        var name = "";
+
+        try {
+            name = trim(doc.artboards[artboardNumber - 1].name || "");
+        } catch (ignored) {}
+
+        return name || ("Artboard " + artboardNumber);
+    }
+
+    function pngFileBaseNamesFromArtboards(doc, artboards) {
+        var names = [];
+        var i;
+
+        for (i = 0; i < artboards.length; i += 1) {
+            names.push(sanitizeFileName(artboardName(doc, artboards[i])));
         }
 
         return names;
@@ -316,19 +337,71 @@
         ];
     }
 
+    function pngTempFile(file) {
+        var folderPath = file.parent ? file.parent.fsName : file.path;
+        var stamp = (new Date()).getTime();
+        var i;
+        var tempFile;
+
+        for (i = 0; i < 1000; i += 1) {
+            tempFile = new File(folderPath + "/__aio_png_export_" + stamp + "_" + i + ".png");
+            if (!tempFile.exists) {
+                return tempFile;
+            }
+        }
+
+        throw new Error("Could not create a temporary PNG file name.");
+    }
+
+    function renamePngTempFile(tempFile, file) {
+        var targetName = decodeName(file.name || "");
+
+        if (!targetName) {
+            throw new Error("PNG output file name is empty.");
+        }
+
+        if (!tempFile.exists) {
+            throw new Error("PNG export did not create a temporary file.");
+        }
+
+        if (file.exists && !file.remove()) {
+            throw new Error("Could not replace existing PNG file:\n" + file.fsName);
+        }
+
+        if (!tempFile.rename(targetName)) {
+            throw new Error("Could not rename PNG export to:\n" + file.fsName);
+        }
+    }
+
+    function exportPngFile(doc, file, options) {
+        var tempFile = pngTempFile(file);
+
+        try {
+            doc.exportFile(tempFile, ExportType.PNG24, options);
+            renamePngTempFile(tempFile, file);
+        } catch (error) {
+            try {
+                if (tempFile && tempFile.exists) {
+                    tempFile.remove();
+                }
+            } catch (ignoredCleanup) {}
+            throw error;
+        }
+    }
+
     function exportPngWithOptionalBleed(doc, file, options, settings) {
         var artboard;
         var originalRect;
         var bleed;
 
         if (settings.png.fullDocument || !settings.png.artBoardClipping || !settings.png.includeBleed) {
-            doc.exportFile(file, ExportType.PNG24, options);
+            exportPngFile(doc, file, options);
             return;
         }
 
         bleed = documentBleedOffsetRect(doc);
         if (!bleed) {
-            doc.exportFile(file, ExportType.PNG24, options);
+            exportPngFile(doc, file, options);
             return;
         }
 
@@ -336,7 +409,7 @@
             artboard = doc.artboards[doc.artboards.getActiveArtboardIndex()];
             originalRect = artboard.artboardRect.slice(0);
             artboard.artboardRect = expandRectWithBleed(originalRect, bleed);
-            doc.exportFile(file, ExportType.PNG24, options);
+            exportPngFile(doc, file, options);
         } finally {
             if (artboard && originalRect) {
                 artboard.artboardRect = originalRect;
@@ -568,19 +641,49 @@
     }
 
     function hasAnyExisting(files) {
+        return !!firstExistingFile(files);
+    }
+
+    function firstExistingFile(files) {
         for (var i = 0; i < files.length; i += 1) {
             if (files[i].exists) {
-                return true;
+                return files[i];
             }
         }
-        return false;
+        return null;
+    }
+
+    function outputFileKey(file) {
+        var path = "";
+
+        try {
+            path = file.fsName;
+        } catch (ignored) {
+            path = String(file);
+        }
+
+        return "|" + String(path).toLowerCase();
+    }
+
+    function assertNoDuplicateFiles(files) {
+        var seen = {};
+        var key;
+        var i;
+
+        for (i = 0; i < files.length; i += 1) {
+            key = outputFileKey(files[i]);
+            if (seen[key]) {
+                throw new Error("Duplicate output file name: " + files[i].fsName);
+            }
+            seen[key] = true;
+        }
     }
 
     function hasSelectedFormat(formats) {
         return !!(formats && (formats.ai || formats.pdf || formats.png));
     }
 
-    function buildFiles(folder, baseName, overwrite, formats, pdfArtboards, pngArtboards) {
+    function buildFiles(folder, baseName, overwrite, formats, pdfArtboards, pngArtboards, pngFileBaseNames) {
         var safeBase = sanitizeFileName(baseName);
         var candidate = safeBase;
         var index = 1;
@@ -589,9 +692,13 @@
         var i;
         var pdfFile;
         var pngFile;
+        var namedPngFiles;
+        var existingPngFile;
+        var usePngArtboardNames = pngFileBaseNames && pngFileBaseNames.length;
 
         do {
             files = [];
+            namedPngFiles = [];
             result = {
                 baseName: candidate
             };
@@ -617,7 +724,18 @@
                 }
             }
             if (formats.png) {
-                if (pngArtboards && pngArtboards.length > 1) {
+                if (usePngArtboardNames && pngArtboards && pngArtboards.length) {
+                    result.pngList = [];
+                    for (i = 0; i < pngArtboards.length; i += 1) {
+                        pngFile = {
+                            artboard: pngArtboards[i],
+                            file: new File(folder.fsName + "/" + pngFileBaseNames[i] + ".png")
+                        };
+                        result.pngList.push(pngFile);
+                        files.push(pngFile.file);
+                        namedPngFiles.push(pngFile.file);
+                    }
+                } else if (pngArtboards && pngArtboards.length > 1) {
                     result.pngList = [];
                     for (i = 0; i < pngArtboards.length; i += 1) {
                         pngFile = {
@@ -631,6 +749,14 @@
                     result.png = new File(folder.fsName + "/" + candidate + ".png");
                     result.pngArtboard = pngArtboards && pngArtboards.length === 1 ? pngArtboards[0] : null;
                     files.push(result.png);
+                }
+            }
+
+            assertNoDuplicateFiles(files);
+            if (usePngArtboardNames && !overwrite) {
+                existingPngFile = firstExistingFile(namedPngFiles);
+                if (existingPngFile) {
+                    throw new Error("PNG file already exists. Enable overwrite or rename the artboard:\n" + existingPngFile.fsName);
                 }
             }
 
@@ -678,7 +804,8 @@
                 artBoardClipping: true,
                 antiAliasing: true,
                 includeBleed: true,
-                fullDocument: false
+                fullDocument: false,
+                useArtboardNames: false
             },
             artboards: {
                 mode: "all",
@@ -738,7 +865,8 @@
                 artBoardClipping: rawPngFullDocument ? false : bool(rawPng.artBoardClipping, defaults.png.artBoardClipping),
                 antiAliasing: bool(rawPng.antiAliasing, defaults.png.antiAliasing),
                 includeBleed: bool(rawPng.includeBleed, defaults.png.includeBleed),
-                fullDocument: rawPngFullDocument
+                fullDocument: rawPngFullDocument,
+                useArtboardNames: !rawPngFullDocument && bool(rawPng.useArtboardNames, defaults.png.useArtboardNames)
             },
             artboards: {
                 mode: normalizeArtboardMode(rawArtboards.mode),
@@ -901,7 +1029,8 @@
 
         var pdfArtboards = settings.formats.pdf && settings.pdf.outputMode === "multiple" ? selectedArtboardNumbers(settings, doc) : null;
         var pngArtboards = settings.formats.png && !settings.png.fullDocument && settings.png.artBoardClipping ? selectedArtboardNumbers(settings, doc) : null;
-        var files = buildFiles(settings.folder, settings.baseName, settings.overwrite, settings.formats, pdfArtboards, pngArtboards);
+        var pngFileBaseNames = settings.formats.png && settings.png.useArtboardNames && pngArtboards ? pngFileBaseNamesFromArtboards(doc, pngArtboards) : null;
+        var files = buildFiles(settings.folder, settings.baseName, settings.overwrite, settings.formats, pdfArtboards, pngArtboards, pngFileBaseNames);
         var originalInteraction = currentUserInteractionLevel();
         var i;
 
@@ -1194,6 +1323,8 @@
         pngIncludeBleedCheck.value = true;
         var pngFullDocumentCheck = pngPanel.add("checkbox", undefined, "Full Document");
         pngFullDocumentCheck.value = false;
+        var pngUseArtboardNamesCheck = pngPanel.add("checkbox", undefined, "Use artboard names as file names");
+        pngUseArtboardNamesCheck.value = false;
         var pngAntiAliasingCheck = pngPanel.add("checkbox", undefined, "Anti-aliasing");
         pngAntiAliasingCheck.value = true;
 
@@ -1209,7 +1340,6 @@
         var buttonGroup = dialog.add("group");
         buttonGroup.alignment = "right";
         var exportButton = buttonGroup.add("button", undefined, "Export", { name: "ok" });
-        var cancelButton = buttonGroup.add("button", undefined, "Cancel", { name: "cancel" });
 
         function updateArtboardRangeInput() {
             artboardRangeInput.enabled = artboardRangeRadio.value;
@@ -1218,6 +1348,13 @@
         artboardAllRadio.onClick = updateArtboardRangeInput;
         artboardRangeRadio.onClick = updateArtboardRangeInput;
         updateArtboardRangeInput();
+
+        function updatePngOptionAvailability() {
+            pngUseArtboardNamesCheck.enabled = !pngFullDocumentCheck.value;
+        }
+
+        pngFullDocumentCheck.onClick = updatePngOptionAvailability;
+        updatePngOptionAvailability();
 
         browseButton.onClick = function () {
             var selected = Folder.selectDialog("Choose export folder", new Folder(folderInput.text));
@@ -1255,10 +1392,6 @@
             dialog.close(1);
         };
 
-        cancelButton.onClick = function () {
-            dialog.close(0);
-        };
-
         if (dialog.show() !== 1) {
             return null;
         }
@@ -1292,7 +1425,8 @@
                 artBoardClipping: !pngFullDocumentCheck.value && pngArtboardCheck.value,
                 antiAliasing: pngAntiAliasingCheck.value,
                 includeBleed: pngIncludeBleedCheck.value,
-                fullDocument: pngFullDocumentCheck.value
+                fullDocument: pngFullDocumentCheck.value,
+                useArtboardNames: !pngFullDocumentCheck.value && pngUseArtboardNamesCheck.value
             },
             artboards: {
                 mode: artboardRangeRadio.value ? "range" : "all",
@@ -1324,7 +1458,7 @@
 
             var settings = makeDialog(app.activeDocument);
             if (!settings) {
-                return "Canceled";
+                return "Closed";
             }
 
             var files = exportAll(settings);

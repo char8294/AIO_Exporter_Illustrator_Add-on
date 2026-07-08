@@ -9,7 +9,7 @@
     var activeUpdateVersion = "";
     var activeUpdateRef = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.4.2";
+    var APP_VERSION = "1.4.3";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
     var GITHUB_RELEASES_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on/releases";
     var GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/char8294/AIO_Exporter_Illustrator_Add-on/releases/latest";
@@ -66,7 +66,8 @@
             artBoardClipping: true,
             antiAliasing: true,
             includeBleed: true,
-            fullDocument: false
+            fullDocument: false,
+            useArtboardNames: false
         },
         artboards: {
             mode: "all",
@@ -107,7 +108,6 @@
         settingsModal: document.getElementById("settingsModal"),
         modalTitle: document.getElementById("modalTitle"),
         modalBody: document.getElementById("modalBody"),
-        modalCancelButton: document.getElementById("modalCancelButton"),
         modalDoneButton: document.getElementById("modalDoneButton")
     };
 
@@ -742,7 +742,6 @@
             '<span class="info-icon" aria-hidden="true">i</span>' +
             '<span>' + messageHtml + "</span>" +
             "</div>";
-        elements.modalCancelButton.textContent = "Cancel";
         elements.modalDoneButton.textContent = primaryLabel || "Update";
         elements.settingsModal.className = "modal";
     }
@@ -878,6 +877,7 @@
     function updateSummaries() {
         var aiSummary = [];
         var pdfSummary = [];
+        var pngSummary = [];
 
         aiSummary.push(optionLabel(AI_COMPATIBILITY_OPTIONS, state.ai.compatibility, state.ai.compatibility));
 
@@ -904,11 +904,17 @@
 
         elements.summaryAi.textContent = aiSummary.length ? aiSummary.join(", ") : "Basic save";
         elements.summaryPdf.textContent = pdfSummary.length ? pdfSummary.join(", ") : "Standard PDF";
-        elements.summaryPng.textContent =
-            state.png.scale + "%, " +
-            (state.png.transparency ? "Transparent" : "Opaque") + ", " +
-            (state.png.fullDocument ? "Full document" : "Artboard") +
-            (!state.png.fullDocument && state.png.includeBleed ? " + bleed" : "");
+        pngSummary.push(state.png.scale + "%");
+        pngSummary.push(state.png.transparency ? "Transparent" : "Opaque");
+        pngSummary.push(state.png.fullDocument ? "Full document" : "Artboard");
+        if (!state.png.fullDocument && state.png.includeBleed) {
+            pngSummary.push("Bleed");
+        }
+        if (!state.png.fullDocument && state.png.useArtboardNames) {
+            pngSummary.push("Artboard names");
+        }
+
+        elements.summaryPng.textContent = pngSummary.join(", ");
     }
 
     function artboardLimitText() {
@@ -1232,7 +1238,6 @@
         normalizeAiState();
 
         elements.modalTitle.textContent = "Settings";
-        elements.modalCancelButton.textContent = "Cancel";
         elements.modalDoneButton.textContent = "Done";
         activeUpdateUrl = "";
         activeUpdateVersion = "";
@@ -1290,11 +1295,13 @@
                 controlHtml("modalPngTransparency", "Transparent background", state.png.transparency) +
                 controlHtml("modalPngIncludeBleed", "Include Bleed", state.png.includeBleed) +
                 controlHtml("modalPngFullDocument", "Full Document", state.png.fullDocument) +
+                controlHtml("modalPngUseArtboardNames", "Use artboard names as file names", state.png.useArtboardNames, state.png.fullDocument) +
                 controlHtml("modalPngAntiAliasing", "Anti-aliasing", state.png.antiAliasing)
             );
 
         bindModalTabs();
         bindAiSettingsControls();
+        bindPngSettingsControls();
         activateSettingsTab(activeTab || "ai");
     }
 
@@ -1358,6 +1365,22 @@
             pdfCompatibleField.addEventListener("change", updateAiOptionAvailability);
         }
         updateAiOptionAvailability();
+    }
+
+    function bindPngSettingsControls() {
+        var fullDocumentField = document.getElementById("modalPngFullDocument");
+        var useArtboardNamesField = document.getElementById("modalPngUseArtboardNames");
+
+        function updatePngOptionAvailability() {
+            if (useArtboardNamesField) {
+                useArtboardNamesField.disabled = fullDocumentField && fullDocumentField.checked;
+            }
+        }
+
+        if (fullDocumentField) {
+            fullDocumentField.addEventListener("change", updatePngOptionAvailability);
+        }
+        updatePngOptionAvailability();
     }
 
     function openSettings(format) {
@@ -1777,6 +1800,7 @@
         state.png.transparency = boolValue(savedPng.transparency, state.png.transparency);
         state.png.includeBleed = boolValue(savedPng.includeBleed, state.png.includeBleed);
         state.png.fullDocument = boolValue(savedPng.fullDocument, state.png.fullDocument);
+        state.png.useArtboardNames = !state.png.fullDocument && boolValue(savedPng.useArtboardNames, state.png.useArtboardNames);
         state.png.artBoardClipping = !state.png.fullDocument && boolValue(savedPng.artBoardClipping, state.png.artBoardClipping);
         state.png.antiAliasing = boolValue(savedPng.antiAliasing, state.png.antiAliasing);
         state.artboards = normalizePersistedArtboards(saved.artboards);
@@ -1804,6 +1828,7 @@
         state.png.transparency = checked("modalPngTransparency");
         state.png.includeBleed = checked("modalPngIncludeBleed");
         state.png.fullDocument = checked("modalPngFullDocument");
+        state.png.useArtboardNames = !state.png.fullDocument && checked("modalPngUseArtboardNames");
         state.png.artBoardClipping = !state.png.fullDocument;
         state.png.antiAliasing = checked("modalPngAntiAliasing");
 
@@ -1845,7 +1870,8 @@
                 artBoardClipping: !state.png.fullDocument,
                 antiAliasing: state.png.antiAliasing,
                 includeBleed: state.png.includeBleed,
-                fullDocument: state.png.fullDocument
+                fullDocument: state.png.fullDocument,
+                useArtboardNames: state.png.useArtboardNames
             },
             artboards: {
                 mode: state.artboards.mode,
@@ -1964,7 +1990,6 @@
         if (elements.updateButton) {
             elements.updateButton.addEventListener("click", checkForUpdates);
         }
-        elements.modalCancelButton.addEventListener("click", closeSettings);
         elements.modalDoneButton.addEventListener("click", handleModalDone);
         elements.overwriteCheckbox.addEventListener("change", persistCurrentSettings);
         elements.artboardModeAll.addEventListener("change", function () {
