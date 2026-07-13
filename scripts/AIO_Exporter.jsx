@@ -6,32 +6,11 @@
 */
 (function () {
     var APP_NAME = "AIO Exporter";
-    var APP_VERSION = "1.6.0";
+    var APP_VERSION = "1.5.0";
     var DEFAULT_BASE_NAME = "AIO_Exporter";
 
     function trim(value) {
         return String(value).replace(/^\s+|\s+$/g, "");
-    }
-
-    function normalizeFolderPath(value) {
-        var path = trim(value || "");
-
-        if ((path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') ||
-                (path.charAt(0) === "'" && path.charAt(path.length - 1) === "'")) {
-            path = trim(path.substring(1, path.length - 1));
-        }
-
-        if (/^file:\/\//i.test(path)) {
-            path = path.replace(/^file:\/\//i, "");
-            if (/^\/[A-Za-z]:[\\/]/.test(path)) {
-                path = path.substring(1);
-            }
-            try {
-                path = decodeURIComponent(path);
-            } catch (ignored) {}
-        }
-
-        return path;
     }
 
     function stripExtension(name) {
@@ -1168,13 +1147,7 @@
     }
 
     function selectFolder(currentPath) {
-        var normalizedPath = normalizeFolderPath(currentPath);
-        var currentFolder = normalizedPath ? new Folder(normalizedPath) : fallbackFolder();
-
-        if (!currentFolder.exists) {
-            currentFolder = fallbackFolder();
-        }
-
+        var currentFolder = currentPath ? new Folder(currentPath) : fallbackFolder();
         var selected = Folder.selectDialog("Choose export folder", currentFolder);
         return selected ? selected.fsName : "";
     }

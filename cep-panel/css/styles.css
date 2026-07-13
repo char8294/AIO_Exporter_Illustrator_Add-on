@@ -12,7 +12,6 @@
 body {
     margin: 0;
     min-width: 380px;
-    overflow-x: hidden;
     background: #292929;
 }
 
@@ -25,8 +24,6 @@ select {
 .panel {
     display: flex;
     min-height: 640px;
-    min-width: 0;
-    width: 100%;
     flex-direction: column;
     gap: 14px;
     padding: 16px;
@@ -34,8 +31,6 @@ select {
 
 .header {
     display: flex;
-    min-width: 0;
-    width: 100%;
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
@@ -49,20 +44,6 @@ select {
     flex-direction: row;
     align-items: center;
     gap: 8px;
-}
-
-.brand {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-}
-
-.brand-icon {
-    display: block;
-    width: 18px;
-    height: 18px;
-    flex: 0 0 18px;
 }
 
 h1,
@@ -116,8 +97,6 @@ p {
 
 .section {
     display: flex;
-    min-width: 0;
-    width: 100%;
     flex-direction: column;
     gap: 9px;
 }
@@ -131,15 +110,12 @@ p {
 
 .field-row {
     display: grid;
-    min-width: 0;
-    width: 100%;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
 }
 
 .text-field,
 .select-field {
-    min-width: 0;
     width: 100%;
     min-height: 34px;
     border: 1px solid #505050;
@@ -461,8 +437,6 @@ p {
 
 
 .folder-button {
-    width: 34px;
-    height: 34px;
     flex: 0 0 34px;
 }
 

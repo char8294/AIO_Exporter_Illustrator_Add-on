@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0"
     ExtensionBundleId="com.local.aioexporter"
-    ExtensionBundleVersion="1.6.0"
+    ExtensionBundleVersion="1.5.0"
     ExtensionBundleName="AIO Exporter"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ExtensionList>
-        <Extension Id="com.local.aioexporter.panel" Version="1.6.0" />
+        <Extension Id="com.local.aioexporter.panel" Version="1.5.0" />
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
@@ -48,12 +48,6 @@
                             <Width>760</Width>
                         </MaxSize>
                     </Geometry>
-                    <Icons>
-                        <Icon Type="Normal">./icons/box-export-light.png</Icon>
-                        <Icon Type="RollOver">./icons/box-export-light.png</Icon>
-                        <Icon Type="DarkNormal">./icons/box-export-dark.png</Icon>
-                        <Icon Type="DarkRollOver">./icons/box-export-dark.png</Icon>
-                    </Icons>
                 </UI>
             </DispatchInfo>
         </Extension>

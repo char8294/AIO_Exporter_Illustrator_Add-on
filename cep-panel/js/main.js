@@ -10,7 +10,7 @@
     var activeUpdateRef = "";
     var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.6.0";
+    var APP_VERSION = "1.5.0";
     var GITHUB_OWNER = "char8294";
     var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
@@ -117,38 +117,6 @@
 
     function trim(value) {
         return String(value || "").replace(/^\s+|\s+$/g, "");
-    }
-
-    function normalizeFolderPath(value) {
-        var path = trim(value);
-
-        if (!path) {
-            return "";
-        }
-
-        if ((path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') ||
-                (path.charAt(0) === "'" && path.charAt(path.length - 1) === "'")) {
-            path = trim(path.substring(1, path.length - 1));
-        }
-
-        if (/^file:\/\//i.test(path)) {
-            path = path.replace(/^file:\/\//i, "");
-            if (/^\/[A-Za-z]:[\\/]/.test(path)) {
-                path = path.substring(1);
-            }
-            try {
-                path = decodeURIComponent(path);
-            } catch (ignored) {}
-        }
-
-        return trim(path);
-    }
-
-    function setFolderPath(value) {
-        var path = normalizeFolderPath(value);
-
-        elements.folderInput.value = path;
-        return path;
     }
 
     function escapeHtml(value) {
@@ -1453,7 +1421,7 @@
             }
 
             if (defaults.folder) {
-                setFolderPath(defaults.folder);
+                elements.folderInput.value = defaults.folder;
             }
             if (defaults.baseName) {
                 elements.baseNameInput.value = defaults.baseName;
@@ -1505,7 +1473,7 @@
             documentChanged = updateDocumentInfo(defaults);
             if (documentChanged || forceFields) {
                 if (defaults.folder) {
-                    setFolderPath(defaults.folder);
+                    elements.folderInput.value = defaults.folder;
                 }
                 if (defaults.baseName) {
                     elements.baseNameInput.value = defaults.baseName;
@@ -1521,7 +1489,6 @@
 
     function pickFolderWithCep(currentPath) {
         var fs = window.cep && window.cep.fs ? window.cep.fs : null;
-        var initialPath = normalizeFolderPath(currentPath);
         var result;
 
         if (!fs) {
@@ -1530,9 +1497,9 @@
 
         try {
             if (typeof fs.showOpenDialogEx === "function") {
-                result = fs.showOpenDialogEx(false, true, "Pick Location", initialPath || "", [], "");
+                result = fs.showOpenDialogEx(false, true, "Pick Location", currentPath || "", [], "");
             } else if (typeof fs.showOpenDialog === "function") {
-                result = fs.showOpenDialog(false, true, "Pick Location", initialPath || "", []);
+                result = fs.showOpenDialog(false, true, "Pick Location", currentPath || "", []);
             } else {
                 return null;
             }
@@ -1541,26 +1508,24 @@
         }
 
         if (result && result.err === 0 && result.data && result.data.length) {
-            return normalizeFolderPath(result.data[0]);
+            return result.data[0];
         }
 
         return "";
     }
 
     function browseFolder() {
-        var currentPathValue = normalizeFolderPath(elements.folderInput.value);
-        var currentPath = JSON.stringify(currentPathValue);
+        var currentPath = JSON.stringify(elements.folderInput.value || "");
         var cepSelected;
 
-        setFolderPath(currentPathValue);
         setBusy(true);
         setStatus("Choosing folder...", false);
 
-        cepSelected = pickFolderWithCep(currentPathValue);
+        cepSelected = pickFolderWithCep(elements.folderInput.value || "");
         if (cepSelected !== null) {
             setBusy(false);
             if (cepSelected) {
-                setFolderPath(cepSelected);
+                elements.folderInput.value = cepSelected;
                 persistCurrentSettings();
                 setStatus("Ready", false);
             } else {
@@ -1578,7 +1543,7 @@
             }
 
             if (result) {
-                setFolderPath(result);
+                elements.folderInput.value = result;
                 persistCurrentSettings();
                 setStatus("Ready", false);
             } else {
@@ -2243,7 +2208,7 @@
         normalizeAiState();
 
         return {
-            folder: normalizeFolderPath(elements.folderInput.value),
+            folder: trim(elements.folderInput.value),
             baseName: trim(elements.baseNameInput.value),
             overwrite: elements.overwriteCheckbox.checked,
             formats: {
