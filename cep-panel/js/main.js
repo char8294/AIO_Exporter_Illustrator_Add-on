@@ -10,7 +10,7 @@
     var activeUpdateRef = "";
     var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.5.0";
+    var APP_VERSION = "1.5.1";
     var GITHUB_OWNER = "char8294";
     var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
@@ -1487,8 +1487,26 @@
         });
     }
 
+    function folderDialogInitialPath(path) {
+        var initialPath = trim(path);
+        var separator;
+
+        if (!initialPath) {
+            return "";
+        }
+
+        if (/^[\\/]+$/.test(initialPath)) {
+            return initialPath.charAt(0);
+        }
+
+        initialPath = initialPath.replace(/[\\/]+$/, "");
+        separator = initialPath.indexOf("\\") !== -1 || /^[A-Za-z]:/.test(initialPath) ? "\\" : "/";
+        return initialPath + separator;
+    }
+
     function pickFolderWithCep(currentPath) {
         var fs = window.cep && window.cep.fs ? window.cep.fs : null;
+        var initialPath = folderDialogInitialPath(currentPath);
         var result;
 
         if (!fs) {
@@ -1497,9 +1515,9 @@
 
         try {
             if (typeof fs.showOpenDialogEx === "function") {
-                result = fs.showOpenDialogEx(false, true, "Pick Location", currentPath || "", [], "");
+                result = fs.showOpenDialogEx(false, true, "Pick Location", initialPath, [], "");
             } else if (typeof fs.showOpenDialog === "function") {
-                result = fs.showOpenDialog(false, true, "Pick Location", currentPath || "", []);
+                result = fs.showOpenDialog(false, true, "Pick Location", initialPath, []);
             } else {
                 return null;
             }
