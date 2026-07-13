@@ -10,7 +10,7 @@
     var activeUpdateRef = "";
     var activeUpdateArchiveUrl = "";
     var STORAGE_KEY = "aioExporter.settings.v1";
-    var APP_VERSION = "1.5.1";
+    var APP_VERSION = "1.5.2";
     var GITHUB_OWNER = "char8294";
     var GITHUB_REPO = "AIO_Exporter_Illustrator_Add-on";
     var GITHUB_REPO_URL = "https://github.com/char8294/AIO_Exporter_Illustrator_Add-on";
