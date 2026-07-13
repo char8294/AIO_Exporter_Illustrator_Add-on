@@ -1,6 +1,6 @@
 # AIO Exporter for Adobe Illustrator 2026
 
-AIO Exporter v1.5.0 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
+AIO Exporter v1.6.0 is a local Adobe Illustrator CEP panel and fallback JSX script for exporting the active document to selected output formats:
 
 - `.ai`
 - `.pdf`
@@ -92,4 +92,6 @@ Then restart Illustrator.
 - AI save version choices are grouped like Illustrator's Save Options list, with unsupported font-preview and legacy-transparency settings disabled automatically.
 - CEP panel settings are saved in the panel's local storage. The direct JSX fallback script starts from defaults each time.
 - The panel header shows the installed version and includes an icon update button that checks GitHub releases/tags and installs newer builds from a single GitHub archive.
+- The panel and CEP extension menu use the Box Export icon in light and dark variants.
+- Browse Folder starts from the current folder field and keeps the selected path normalized before export.
 - PDF preset choices refresh from Illustrator each time PDF settings are opened.
